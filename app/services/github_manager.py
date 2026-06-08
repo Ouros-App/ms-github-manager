@@ -1,4 +1,5 @@
 import asyncio
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ class CreationState:
 
 class GitHubRepositoryManager:
     _WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "templates" / "workflows"
+    _REPOSITORY_READY_INTERVAL_SECONDS = 2
 
     def __init__(self) -> None:
         self._creations: dict[str, CreationState] = {}
@@ -97,6 +99,8 @@ class GitHubRepositoryManager:
             await self._mark_running(creation_id)
             await self._step(creation_id, "Criando repositorio cru")
             repo = await asyncio.to_thread(self._create_bare_repository_sync, payload)
+            await self._step(creation_id, "Aguardando branch main")
+            await asyncio.to_thread(self._wait_until_repository_ready_sync, repo.name)
 
             if self._gitignore_template(payload.language) is None:
                 await self._step(creation_id, "Criando .gitignore generico")
@@ -128,6 +132,8 @@ class GitHubRepositoryManager:
 
             await self._step(creation_id, "Criando repositorio a partir do template")
             repo = await asyncio.to_thread(self._create_from_template_sync, payload)
+            await self._step(creation_id, "Aguardando copia do template")
+            await asyncio.to_thread(self._wait_until_repository_ready_sync, repo.name)
 
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(
@@ -158,10 +164,11 @@ class GitHubRepositoryManager:
             "name": payload.name,
             "description": payload.description or "",
             "private": payload.visibility == "private",
-            "visibility": None if payload.visibility == "private" else payload.visibility,
             "auto_init": True,
             "license_template": "mit",
         }
+        if payload.visibility != "private":
+            kwargs["visibility"] = payload.visibility
         gitignore_template = self._gitignore_template(payload.language)
         if gitignore_template is not None:
             kwargs["gitignore_template"] = gitignore_template
@@ -245,6 +252,24 @@ class GitHubRepositoryManager:
             )
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _wait_until_repository_ready_sync(self, repository_name: str) -> None:
+        deadline = time.monotonic() + settings.GH_TIMEOUT_SECONDS
+        last_error = "Repositorio ainda nao esta pronto."
+
+        while time.monotonic() < deadline:
+            try:
+                repo = self._repo(repository_name)
+                branch = repo.get_branch(settings.DEFAULT_BRANCH)
+                repo.get_commit(branch.commit.sha)
+                return
+            except GithubException as exc:
+                last_error = self._format_github_error(exc)
+                time.sleep(self._REPOSITORY_READY_INTERVAL_SECONDS)
+
+        raise GitHubManagerError(
+            f"Repositorio '{settings.GITHUB_ORG_LOGIN}/{repository_name}' nao ficou pronto: {last_error}"
+        )
 
     async def _mark_running(self, creation_id: str) -> None:
         async with self._lock:

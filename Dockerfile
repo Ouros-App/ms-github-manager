@@ -9,9 +9,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia o .env também
-COPY .env .
 COPY app ./app
+RUN test -f app/templates/workflows/fastapi.yml \
+    && test -f app/templates/workflows/frontend.yml \
+    && test -f app/templates/workflows/springboot.yml \
+    && test -f app/templates/workflows/generic.yml
 
 EXPOSE $PORT
 
