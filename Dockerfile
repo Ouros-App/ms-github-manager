@@ -9,6 +9,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copia o .env também
+COPY .env .
 COPY app ./app
 
 EXPOSE $PORT
