@@ -10,8 +10,9 @@ Opcionalmente, o `gh` tambem pode autenticar usando `GH_TOKEN` definido no `.env
 - Lista repositorios de template da organizacao cujo nome termina em `-template`.
 - Cria repositorio no modo cru com README, licenca MIT e `.gitignore` por linguagem quando disponivel.
 - Cria repositorio a partir de um template existente na mesma organizacao.
-- Aplica workflow de CI/CD para templates FastAPI.
-- Aplica protecao na branch `main`, exigindo pull request, uma aprovacao e status check `ci`.
+- Aplica workflow de CI/CD para React + TypeScript + Vite, Java Spring Boot e Python FastAPI.
+- Aplica protecao na branch `main`, exigindo pull request, uma aprovacao, status checks `ci` e `conventional-commits`, historico linear e conversas resolvidas.
+- Expoe Swagger UI em `/docs`, ReDoc em `/redoc` e OpenAPI JSON em `/openapi.json`.
 - Expoe status de criacao por `creation_id`.
 
 ## Configuracao
@@ -47,6 +48,7 @@ Acesse:
 - API: `http://localhost:8000`
 - Health check: `http://localhost:8000/health`
 - Docs: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
 
 ## Endpoints
 
@@ -75,9 +77,10 @@ POST /repositories/bare
 
 Valores aceitos para `visibility`: `private`, `public`, `internal`.
 
-Valores aceitos para `language`: `generic`, `python`, `fastapi`, `node`, `go`.
+Valores aceitos para `language`: `frontend`, `springboot`, `fastapi`.
 
-Quando `language` for `fastapi`, o servico adiciona o workflow `.github/workflows/ci-cd.yml`.
+O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. Backends sobem PostgreSQL, MongoDB e Redis no job de CI para testes de integracao.
+Os templates usados ficam em `app/templates/workflows`.
 
 ### Criar repositorio a partir de template
 
@@ -94,7 +97,7 @@ POST /repositories/from-template
 }
 ```
 
-Templates FastAPI sao detectados pelo nome contendo `fastapi` e recebem o workflow de CI/CD FastAPI.
+O workflow de CI/CD e escolhido pelo nome do template quando ele contem `frontend`, `react`, `vite`, `typescript`, `spring`, `java` ou `fastapi`. Outros templates recebem um workflow generico.
 
 ### Consultar status de criacao
 

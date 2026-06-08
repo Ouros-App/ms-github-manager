@@ -4,6 +4,7 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 from app.core.config import settings
@@ -34,6 +35,8 @@ class CreationState:
 
 
 class GitHubRepositoryManager:
+    _WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "templates" / "workflows"
+
     def __init__(self) -> None:
         self._creations: dict[str, CreationState] = {}
         self._lock = asyncio.Lock()
@@ -123,9 +126,8 @@ class GitHubRepositoryManager:
                     "Add generic gitignore",
                 )
 
-            if payload.language == "fastapi":
-                await self._step(creation_id, "Aplicando CI/CD FastAPI")
-                await self._put_fastapi_workflow(payload.name)
+            await self._step(creation_id, "Aplicando CI/CD")
+            await self._put_workflow(payload.name, payload.language)
 
             await self._step(creation_id, "Aplicando protecao da branch main")
             await self._protect_main_branch(payload.name)
@@ -158,9 +160,8 @@ class GitHubRepositoryManager:
             await self._step(creation_id, "Criando repositorio a partir do template")
             await self._run_gh(*args)
 
-            if self._is_fastapi_template(payload.template_name):
-                await self._step(creation_id, "Aplicando CI/CD FastAPI")
-                await self._put_fastapi_workflow(payload.name)
+            await self._step(creation_id, "Aplicando CI/CD")
+            await self._put_workflow(payload.name, self._template_language(payload.template_name))
 
             await self._step(creation_id, "Aplicando protecao da branch main")
             await self._protect_main_branch(payload.name)
@@ -176,12 +177,12 @@ class GitHubRepositoryManager:
                 f"com sufixo '{settings.TEMPLATE_SUFFIX}'."
             )
 
-    async def _put_fastapi_workflow(self, repository_name: str) -> None:
+    async def _put_workflow(self, repository_name: str, language: str) -> None:
         await self._put_file(
             repository_name,
             ".github/workflows/ci-cd.yml",
-            self._fastapi_workflow(),
-            "Configure FastAPI CI/CD",
+            self._workflow(language),
+            "Configure CI/CD",
         )
 
     async def _put_file(
@@ -227,18 +228,21 @@ class GitHubRepositoryManager:
         protection_payload = {
             "required_status_checks": {
                 "strict": True,
-                "contexts": ["ci"],
+                "contexts": ["ci", "conventional-commits"],
             },
             "enforce_admins": True,
             "required_pull_request_reviews": {
                 "required_approving_review_count": 1,
                 "dismiss_stale_reviews": True,
                 "require_code_owner_reviews": False,
+                "require_last_push_approval": True,
             },
             "restrictions": None,
             "required_linear_history": True,
+            "required_conversation_resolution": True,
             "allow_force_pushes": False,
             "allow_deletions": False,
+            "block_creations": False,
         }
         await self._run_gh(
             "api",
@@ -319,15 +323,26 @@ class GitHubRepositoryManager:
 
     def _gitignore_template(self, language: str) -> str | None:
         templates = {
-            "python": "Python",
+            "frontend": "Node",
+            "springboot": "Java",
             "fastapi": "Python",
-            "node": "Node",
-            "go": "Go",
         }
         return templates.get(language)
 
-    def _is_fastapi_template(self, template_name: str) -> bool:
-        return "fastapi" in template_name.lower()
+    def _template_language(self, template_name: str) -> str:
+        normalized_name = template_name.lower()
+        if (
+            "frontend" in normalized_name
+            or "react" in normalized_name
+            or "vite" in normalized_name
+            or "typescript" in normalized_name
+        ):
+            return "frontend"
+        if "spring" in normalized_name or "java" in normalized_name:
+            return "springboot"
+        if "fastapi" in normalized_name:
+            return "fastapi"
+        return "generic"
 
     def _generic_gitignore(self) -> str:
         return """# Environment
@@ -346,55 +361,11 @@ temp/
 .vscode/
 """
 
-    def _fastapi_workflow(self) -> str:
-        return """name: CI/CD
-
-on:
-  pull_request:
-    branches:
-      - main
-  push:
-    branches:
-      - main
-
-jobs:
-  ci:
-    name: ci
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install ruff pytest
-
-      - name: Lint
-        run: ruff check .
-
-      - name: Test
-        run: pytest
-
-  deploy:
-    name: deploy
-    runs-on: ubuntu-latest
-    needs: ci
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Deploy
-        run: echo "Configure o deploy deste repositorio."
-"""
+    def _workflow(self, language: str) -> str:
+        workflow_path = self._WORKFLOW_DIR / f"{language}.yml"
+        if not workflow_path.exists():
+            workflow_path = self._WORKFLOW_DIR / "generic.yml"
+        return workflow_path.read_text(encoding="utf-8")
 
 
 github_manager = GitHubRepositoryManager()

@@ -13,17 +13,32 @@ from app.services.github_manager import GitHubCliError, github_manager
 router = APIRouter()
 
 
-@router.get("/", response_model=MessageResponse)
+@router.get(
+    "/",
+    response_model=MessageResponse,
+    tags=["Health"],
+    summary="Status da aplicacao",
+)
 async def read_root() -> MessageResponse:
     return MessageResponse(message="Ouros GitHub Repository Manager is running")
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    tags=["Health"],
+    summary="Health check",
+)
 async def health_check() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-@router.get("/templates", response_model=list[TemplateResponse])
+@router.get(
+    "/templates",
+    response_model=list[TemplateResponse],
+    tags=["Templates"],
+    summary="Listar templates",
+)
 async def list_templates() -> list[TemplateResponse]:
     try:
         return await github_manager.list_templates()
@@ -38,6 +53,8 @@ async def list_templates() -> list[TemplateResponse]:
     "/repositories/bare",
     response_model=RepositoryCreationResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    tags=["Repositories"],
+    summary="Criar repositorio cru",
 )
 async def create_bare_repository(
     payload: BareRepositoryCreateRequest,
@@ -55,6 +72,8 @@ async def create_bare_repository(
     "/repositories/from-template",
     response_model=RepositoryCreationResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    tags=["Repositories"],
+    summary="Criar repositorio a partir de template",
 )
 async def create_repository_from_template(
     payload: TemplateRepositoryCreateRequest,
@@ -71,6 +90,8 @@ async def create_repository_from_template(
 @router.get(
     "/repositories/creations/{creation_id}",
     response_model=RepositoryCreationStatusResponse,
+    tags=["Repositories"],
+    summary="Consultar status de criacao",
 )
 async def get_repository_creation_status(
     creation_id: str,
