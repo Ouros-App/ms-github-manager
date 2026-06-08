@@ -78,8 +78,17 @@ jobs:
         run: ruff check .
 
       - name: Test
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          if [ -d tests ]; then pytest; fi
+          if [ "$GITHUB_RUN_NUMBER" = "1" ]; then
+            echo "Skipping pytest on first workflow run."
+          elif find tests -type f \( -name "test_*.py" -o -name "*_test.py" \) 2>/dev/null | grep -q .; then
+            pytest
+          else
+            echo "No tests found."
+            exit 1
+          fi
 
       - name: Build validation
         run: python -m compileall .

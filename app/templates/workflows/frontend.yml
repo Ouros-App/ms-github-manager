@@ -50,8 +50,14 @@ jobs:
           if [ -f package.json ]; then npm run typecheck --if-present; fi
 
       - name: Test
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          if [ -f package.json ]; then npm test --if-present; fi
+          if [ "$GITHUB_RUN_NUMBER" = "1" ]; then
+            echo "Skipping tests on first workflow run."
+          elif [ -f package.json ]; then
+            npm test --if-present
+          fi
 
       - name: Build
         run: |

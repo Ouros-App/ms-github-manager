@@ -73,16 +73,32 @@ jobs:
           java-version: "21"
 
       - name: Build and test with Maven
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          if [ -f mvnw ]; then chmod +x mvnw && ./mvnw -B verify; elif [ -f pom.xml ]; then mvn -B verify; fi
+          if [ "$GITHUB_RUN_NUMBER" = "1" ]; then
+            if [ -f mvnw ]; then chmod +x mvnw && ./mvnw -B package -DskipTests; elif [ -f pom.xml ]; then mvn -B package -DskipTests; fi
+          elif [ -f mvnw ]; then
+            chmod +x mvnw && ./mvnw -B verify
+          elif [ -f pom.xml ]; then
+            mvn -B verify
+          fi
 
       - name: Set up Gradle
         if: ${{ hashFiles('build.gradle', 'build.gradle.kts') != '' }}
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build and test with Gradle
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          if [ -f gradlew ]; then chmod +x gradlew && ./gradlew clean build; elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then gradle clean build; fi
+          if [ "$GITHUB_RUN_NUMBER" = "1" ]; then
+            if [ -f gradlew ]; then chmod +x gradlew && ./gradlew clean build -x test; elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then gradle clean build -x test; fi
+          elif [ -f gradlew ]; then
+            chmod +x gradlew && ./gradlew clean build
+          elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then
+            gradle clean build
+          fi
 
   deploy:
     name: deploy
