@@ -90,7 +90,7 @@ POST /repositories/from-template
 ```json
 {
   "name": "billing-api",
-  "template_name": "fastapi-template",
+  "template_name": "ms-fastapi-template",
   "description": "API de faturamento",
   "visibility": "private"
 }

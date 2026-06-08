@@ -18,10 +18,10 @@ class TemplateResponse(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "name": "fastapi-template",
+                "name": "ms-fastapi-template",
                 "description": "Template para APIs FastAPI",
                 "private": True,
-                "url": "https://github.com/Ouros-App/fastapi-template",
+                "url": "https://github.com/Ouros-App/ms-fastapi-template",
             }
         }
     }
@@ -69,7 +69,7 @@ class TemplateRepositoryCreateRequest(BaseModel):
         "json_schema_extra": {
             "example": {
                 "name": "billing-api",
-                "template_name": "fastapi-template",
+                "template_name": "ms-fastapi-template",
                 "description": "API de faturamento",
                 "visibility": "private",
             }
