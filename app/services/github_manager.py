@@ -1,11 +1,12 @@
 import asyncio
-import base64
-import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
+
+from github import Auth, Github
+from github.GithubException import GithubException, UnknownObjectException
 
 from app.core.config import settings
 from app.schemas.github import (
@@ -17,7 +18,7 @@ from app.schemas.github import (
 )
 
 
-class GitHubCliError(RuntimeError):
+class GitHubManagerError(RuntimeError):
     pass
 
 
@@ -40,27 +41,24 @@ class GitHubRepositoryManager:
     def __init__(self) -> None:
         self._creations: dict[str, CreationState] = {}
         self._lock = asyncio.Lock()
-
-    async def list_templates(self) -> list[TemplateResponse]:
-        repos = await self._run_gh_json(
-            "repo",
-            "list",
-            settings.GITHUB_ORG_LOGIN,
-            "--limit",
-            "200",
-            "--json",
-            "name,description,isPrivate,url",
+        if not settings.GH_TOKEN:
+            raise GitHubManagerError("GH_TOKEN ou GITHUB_TOKEN nao configurado no ambiente.")
+        self._client = Github(
+            auth=Auth.Token(settings.GH_TOKEN),
+            timeout=settings.GH_TIMEOUT_SECONDS,
         )
 
+    async def list_templates(self) -> list[TemplateResponse]:
+        repos = await asyncio.to_thread(self._list_templates_sync)
         return [
             TemplateResponse(
-                name=repo["name"],
-                description=repo.get("description"),
-                private=repo["isPrivate"],
-                url=repo["url"],
+                name=repo.name,
+                description=repo.description,
+                private=repo.private,
+                url=repo.html_url,
             )
             for repo in repos
-            if repo["name"].endswith(settings.TEMPLATE_SUFFIX)
+            if repo.name.endswith(settings.TEMPLATE_SUFFIX)
         ]
 
     async def start_bare_creation(self, payload: BareRepositoryCreateRequest) -> CreationState:
@@ -97,41 +95,25 @@ class GitHubRepositoryManager:
     ) -> None:
         try:
             await self._mark_running(creation_id)
-            repo = f"{settings.GITHUB_ORG_LOGIN}/{payload.name}"
-
-            args = [
-                "repo",
-                "create",
-                repo,
-                self._visibility_flag(payload.visibility),
-                "--add-readme",
-                "--license",
-                "mit",
-            ]
-            gitignore_template = self._gitignore_template(payload.language)
-            if gitignore_template is not None:
-                args.extend(["--gitignore", gitignore_template])
-            if payload.description:
-                args.extend(["--description", payload.description])
-
             await self._step(creation_id, "Criando repositorio cru")
-            await self._run_gh(*args)
+            repo = await asyncio.to_thread(self._create_bare_repository_sync, payload)
 
-            if gitignore_template is None:
+            if self._gitignore_template(payload.language) is None:
                 await self._step(creation_id, "Criando .gitignore generico")
-                await self._put_file(
-                    payload.name,
+                await asyncio.to_thread(
+                    self._put_file_sync,
+                    repo.name,
                     ".gitignore",
                     self._generic_gitignore(),
                     "Add generic gitignore",
                 )
 
             await self._step(creation_id, "Aplicando CI/CD")
-            await self._put_workflow(payload.name, payload.language)
+            await asyncio.to_thread(self._put_workflow_sync, repo.name, payload.language)
 
             await self._step(creation_id, "Aplicando protecao da branch main")
-            await self._protect_main_branch(payload.name)
-            await self._mark_succeeded(creation_id, f"https://github.com/{repo}")
+            await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
+            await self._mark_succeeded(creation_id, repo.html_url)
         except Exception as exc:
             await self._mark_failed(creation_id, str(exc))
 
@@ -144,28 +126,19 @@ class GitHubRepositoryManager:
             await self._mark_running(creation_id)
             await self._assert_template_exists(payload.template_name)
 
-            repo = f"{settings.GITHUB_ORG_LOGIN}/{payload.name}"
-            template = f"{settings.GITHUB_ORG_LOGIN}/{payload.template_name}"
-            args = [
-                "repo",
-                "create",
-                repo,
-                self._visibility_flag(payload.visibility),
-                "--template",
-                template,
-            ]
-            if payload.description:
-                args.extend(["--description", payload.description])
-
             await self._step(creation_id, "Criando repositorio a partir do template")
-            await self._run_gh(*args)
+            repo = await asyncio.to_thread(self._create_from_template_sync, payload)
 
             await self._step(creation_id, "Aplicando CI/CD")
-            await self._put_workflow(payload.name, self._template_language(payload.template_name))
+            await asyncio.to_thread(
+                self._put_workflow_sync,
+                repo.name,
+                self._template_language(payload.template_name),
+            )
 
             await self._step(creation_id, "Aplicando protecao da branch main")
-            await self._protect_main_branch(payload.name)
-            await self._mark_succeeded(creation_id, f"https://github.com/{repo}")
+            await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
+            await self._mark_succeeded(creation_id, repo.html_url)
         except Exception as exc:
             await self._mark_failed(creation_id, str(exc))
 
@@ -177,111 +150,101 @@ class GitHubRepositoryManager:
                 f"com sufixo '{settings.TEMPLATE_SUFFIX}'."
             )
 
-    async def _put_workflow(self, repository_name: str, language: str) -> None:
-        await self._put_file(
+    def _list_templates_sync(self):
+        return list(self._org().get_repos(type="all"))
+
+    def _create_bare_repository_sync(self, payload: BareRepositoryCreateRequest):
+        kwargs = {
+            "name": payload.name,
+            "description": payload.description or "",
+            "private": payload.visibility == "private",
+            "visibility": None if payload.visibility == "private" else payload.visibility,
+            "auto_init": True,
+            "license_template": "mit",
+        }
+        gitignore_template = self._gitignore_template(payload.language)
+        if gitignore_template is not None:
+            kwargs["gitignore_template"] = gitignore_template
+        try:
+            return self._org().create_repo(**kwargs)
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _create_from_template_sync(self, payload: TemplateRepositoryCreateRequest):
+        try:
+            _, data = self._client.requester.requestJsonAndCheck(
+                "POST",
+                f"/repos/{settings.GITHUB_ORG_LOGIN}/{payload.template_name}/generate",
+                input={
+                    "owner": settings.GITHUB_ORG_LOGIN,
+                    "name": payload.name,
+                    "description": payload.description or "",
+                    "private": payload.visibility == "private",
+                    "include_all_branches": False,
+                },
+            )
+            repo_url = data["url"] if isinstance(data, dict) else None
+            if not repo_url:
+                raise GitHubManagerError("Resposta invalida ao gerar repositorio por template.")
+            return self._client.get_repo(f"{settings.GITHUB_ORG_LOGIN}/{payload.name}")
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _put_workflow_sync(self, repository_name: str, language: str) -> None:
+        self._put_file_sync(
             repository_name,
             ".github/workflows/ci-cd.yml",
             self._workflow(language),
             "Configure CI/CD",
         )
 
-    async def _put_file(
+    def _put_file_sync(
         self,
         repository_name: str,
         path: str,
         content: str,
         message: str,
     ) -> None:
-        existing = await self._get_file_metadata(repository_name, path)
-        payload = {
-            "message": message,
-            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-            "branch": settings.DEFAULT_BRANCH,
-        }
-        if existing is not None and existing.get("sha"):
-            payload["sha"] = existing["sha"]
-
-        await self._run_gh(
-            "api",
-            "--method",
-            "PUT",
-            f"repos/{settings.GITHUB_ORG_LOGIN}/{repository_name}/contents/{path}",
-            "--input",
-            "-",
-            input_data=json.dumps(payload),
-        )
-
-    async def _get_file_metadata(self, repository_name: str, path: str) -> dict[str, Any] | None:
+        repo = self._repo(repository_name)
         try:
-            return await self._run_gh_json(
-                "api",
-                "--method",
-                "GET",
-                f"repos/{settings.GITHUB_ORG_LOGIN}/{repository_name}/contents/{path}",
-                "-f",
-                f"ref={settings.DEFAULT_BRANCH}",
+            existing = repo.get_contents(path, ref=settings.DEFAULT_BRANCH)
+            repo.update_file(
+                path=path,
+                message=message,
+                content=content,
+                sha=existing.sha,
+                branch=settings.DEFAULT_BRANCH,
             )
-        except GitHubCliError:
-            return None
+        except UnknownObjectException:
+            repo.create_file(
+                path=path,
+                message=message,
+                content=content,
+                branch=settings.DEFAULT_BRANCH,
+            )
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
 
-    async def _protect_main_branch(self, repository_name: str) -> None:
-        protection_payload = {
-            "required_status_checks": {
-                "strict": True,
-                "contexts": ["ci", "conventional-commits"],
-            },
-            "enforce_admins": True,
-            "required_pull_request_reviews": {
-                "required_approving_review_count": 1,
-                "dismiss_stale_reviews": True,
-                "require_code_owner_reviews": False,
-                "require_last_push_approval": True,
-            },
-            "restrictions": None,
-            "required_linear_history": True,
-            "required_conversation_resolution": True,
-            "allow_force_pushes": False,
-            "allow_deletions": False,
-            "block_creations": False,
-        }
-        await self._run_gh(
-            "api",
-            "--method",
-            "PUT",
-            f"repos/{settings.GITHUB_ORG_LOGIN}/{repository_name}/branches/{settings.DEFAULT_BRANCH}/protection",
-            "--input",
-            "-",
-            input_data=json.dumps(protection_payload),
-        )
-
-    async def _run_gh_json(self, *args: str, input_data: str | None = None) -> Any:
-        output = await self._run_gh(*args, input_data=input_data)
-        return json.loads(output)
-
-    async def _run_gh(self, *args: str, input_data: str | None = None) -> str:
-        process = await asyncio.create_subprocess_exec(
-            "gh",
-            *args,
-            stdin=asyncio.subprocess.PIPE if input_data is not None else None,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
+    def _protect_main_branch_sync(self, repository_name: str) -> None:
+        repo = self._repo(repository_name)
         try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input_data.encode("utf-8") if input_data is not None else None),
-                timeout=settings.GH_TIMEOUT_SECONDS,
+            branch = repo.get_branch(settings.DEFAULT_BRANCH)
+            branch.edit_protection(
+                strict=True,
+                contexts=["ci", "conventional-commits"],
+                enforce_admins=True,
+                dismiss_stale_reviews=True,
+                require_code_owner_reviews=False,
+                required_approving_review_count=1,
+                require_last_push_approval=True,
+                required_linear_history=True,
+                allow_force_pushes=False,
+                required_conversation_resolution=True,
+                allow_deletions=False,
+                block_creations=False,
             )
-        except asyncio.TimeoutError as exc:
-            process.kill()
-            await process.wait()
-            raise GitHubCliError(f"gh {' '.join(args)} excedeu o timeout") from exc
-
-        if process.returncode != 0:
-            error = stderr.decode("utf-8").strip() or stdout.decode("utf-8").strip()
-            raise GitHubCliError(f"gh {' '.join(args)} falhou: {error}")
-
-        return stdout.decode("utf-8")
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
 
     async def _mark_running(self, creation_id: str) -> None:
         async with self._lock:
@@ -317,9 +280,6 @@ class GitHubRepositoryManager:
             error=state.error,
             url=state.url,
         )
-
-    def _visibility_flag(self, visibility: str) -> str:
-        return f"--{visibility}"
 
     def _gitignore_template(self, language: str) -> str | None:
         templates = {
@@ -366,6 +326,23 @@ temp/
         if not workflow_path.exists():
             workflow_path = self._WORKFLOW_DIR / "generic.yml"
         return workflow_path.read_text(encoding="utf-8")
+
+    def _org(self):
+        try:
+            return self._client.get_organization(settings.GITHUB_ORG_LOGIN)
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _repo(self, repository_name: str):
+        try:
+            return self._client.get_repo(f"{settings.GITHUB_ORG_LOGIN}/{repository_name}")
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _format_github_error(self, exc: GithubException) -> str:
+        data = exc.data if isinstance(exc.data, dict) else {}
+        message = data.get("message") if data else None
+        return message or str(exc)
 
 
 github_manager = GitHubRepositoryManager()

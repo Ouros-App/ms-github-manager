@@ -8,7 +8,7 @@ from app.schemas.github import (
     TemplateRepositoryCreateRequest,
     TemplateResponse,
 )
-from app.services.github_manager import GitHubCliError, github_manager
+from app.services.github_manager import GitHubManagerError, github_manager
 
 router = APIRouter()
 
@@ -42,7 +42,7 @@ async def health_check() -> HealthResponse:
 async def list_templates() -> list[TemplateResponse]:
     try:
         return await github_manager.list_templates()
-    except GitHubCliError as exc:
+    except GitHubManagerError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),

@@ -1,9 +1,8 @@
 # Ouros GitHub Repository Manager
 
-API FastAPI para listar templates e criar repositorios na organizacao "Ouros App" usando o GitHub CLI (`gh`).
+API FastAPI para listar templates e criar repositorios na organizacao "Ouros App" usando `PyGithub`.
 
-O servico assume que o `gh` ja esta instalado, autenticado e autorizado no servidor onde a API roda.
-Opcionalmente, o `gh` tambem pode autenticar usando `GH_TOKEN` definido no `.env`.
+O servico usa `GH_TOKEN` ou `GITHUB_TOKEN` definido no `.env` para autenticar na API do GitHub.
 
 ## Funcionalidades
 
@@ -28,11 +27,11 @@ Variaveis principais:
 | Nome | Padrao | Descricao |
 | --- | --- | --- |
 | `APP_PORT` | `8000` | Porta publicada no host pelo Docker Compose. |
-| `GITHUB_ORG_LOGIN` | `Ouros-App` | Login/slug da organizacao no GitHub usado pelo `gh`. |
-| `GH_TOKEN` | - | Token do GitHub usado pelo GitHub CLI. Nao commitar este valor. |
+| `GITHUB_ORG_LOGIN` | `Ouros-App` | Login/slug da organizacao no GitHub. |
+| `GH_TOKEN` | - | Token do GitHub usado pelo `PyGithub`. Nao commitar este valor. |
 | `TEMPLATE_SUFFIX` | `-template` | Sufixo usado para descobrir repositorios de template. |
 | `DEFAULT_BRANCH` | `main` | Branch principal protegida pelo servico. |
-| `GH_TIMEOUT_SECONDS` | `120` | Timeout para cada chamada ao `gh`. |
+| `GH_TIMEOUT_SECONDS` | `120` | Timeout para as chamadas do cliente GitHub. |
 
 ## Rodando localmente
 
