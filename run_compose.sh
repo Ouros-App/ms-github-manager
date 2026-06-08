@@ -30,7 +30,7 @@ color_echo() {
 }
 
 echo ""
-color_echo "cyan" "🚀 INICIANDO DEPLOY COM DOCKER-COMPOSE..."
+color_echo "cyan" "🚀 INICIANDO DEPLOY COM DOCKER-COMPOSE (COM REBUILD)..."
 echo ""
 
 # Verificar arquivo .env
@@ -88,7 +88,7 @@ color_echo "yellow" "   - INSTANCE: $INSTANCE"
 color_echo "yellow" "   - APP_NAME: $APP_NAME"
 
 # Parar containers antigos (se houver)
-if docker-compose ps | grep -q "Up"; then
+if docker-compose ps 2>/dev/null | grep -q "Up"; then
     color_echo "yellow" "⚠️ Containers ativos detectados. Parando..."
     (
         docker-compose down > /dev/null 2>&1
@@ -99,10 +99,36 @@ if docker-compose ps | grep -q "Up"; then
     color_echo "green" "✓ Containers antigos parados"
 fi
 
+# REMOVER IMAGENS ANTIGAS (opcional - garante rebuild completo)
+color_echo "blue" "🗑️  Removendo imagens antigas do projeto..."
+(
+    docker-compose down --rmi local > /dev/null 2>&1
+) &
+clean_pid=$!
+show_loading $clean_pid "🗑️  Limpando imagens antigas"
+wait $clean_pid
+color_echo "green" "✓ Imagens antigas removidas"
+
+# RECONSTRUIR IMAGEM FORÇADAMENTE
+color_echo "blue" "🔨 Reconstruindo imagem (com --no-cache)..."
+(
+    docker-compose build --no-cache > /tmp/docker_build_output.log 2>&1
+) &
+build_pid=$!
+show_loading $build_pid "🔨 Build da imagem (isso pode levar alguns minutos)"
+wait $build_pid
+
+if [ $? -ne 0 ]; then
+    color_echo "red" "❌ Falha ao construir a imagem"
+    color_echo "yellow" "📋 Últimas linhas do log de build:"
+    tail -10 /tmp/docker_build_output.log
+    exit 1
+fi
+color_echo "green" "✓ Imagem reconstruída com sucesso"
+
 # Iniciar com docker-compose
 color_echo "blue" "🐳 Iniciando containers com docker-compose..."
 
-# Executar e capturar saída para debug
 (
     docker-compose up -d > /tmp/docker_compose_output.log 2>&1
 ) &
@@ -115,7 +141,7 @@ if [ $? -eq 0 ]; then
 else
     color_echo "red" "❌ Falha ao iniciar containers"
     color_echo "yellow" "📋 Últimas linhas do log:"
-    tail -5 /tmp/docker_compose_output.log
+    tail -10 /tmp/docker_compose_output.log
     exit 1
 fi
 
@@ -130,7 +156,8 @@ docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 
 # Verificar logs recentes
 color_echo "blue" "📝 Últimos logs:"
-docker-compose logs --tail=5
+docker-compose logs --tail=10
 
 echo ""
 color_echo "green" "✨ Deploy concluído com sucesso!"
+color_echo "yellow" "💡 Nota: A imagem foi reconstruída com --no-cache para garantir código mais recente"
