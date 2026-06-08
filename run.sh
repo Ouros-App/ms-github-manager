@@ -29,8 +29,34 @@ color_echo() {
     esac
 }
 
+# Help
+show_help() {
+    echo "Uso: $0 --reboot {numero}"
+    echo ""
+    echo "Opções:"
+    echo "  --reboot NUMERO    Reinicia o container com o número especificado"
+    echo "  -h, --help         Mostra esta ajuda"
+    echo ""
+    echo "Exemplo:"
+    echo "  $0 --reboot 1      # Reinicia o container minha_app_1"
+}
+
+# Verificar argumentos
+if [ $# -ne 2 ] || [ "$1" != "--reboot" ]; then
+    show_help
+    exit 1
+fi
+
+NUMERO=$2
+
+# Validar número
+if ! [[ "$NUMERO" =~ ^[0-9]+$ ]]; then
+    color_echo "red" "❌ Número inválido: $NUMERO"
+    exit 1
+fi
+
 echo ""
-color_echo "cyan" "🚀 INICIANDO DEPLOY..."
+color_echo "cyan" "🔄 REINICIANDO CONTAINER #$NUMERO..."
 echo ""
 
 # Verificar arquivo .env
@@ -47,38 +73,65 @@ if [ -z "$BASE_NAME" ]; then
 fi
 color_echo "green" "✓ APP_NAME: $BASE_NAME"
 
-# Gerar porta aleatória
-color_echo "blue" "🔍 Selecionando porta disponível..."
-PORTA=$((RANDOM % 9000 + 1000))
+NOME="${BASE_NAME}_${NUMERO}"
 
-(
-    while lsof -i :$PORTA &>/dev/null; do
-        PORTA=$((RANDOM % 9000 + 1000))
+# Verificar se o container existe
+color_echo "blue" "🔍 Verificando se o container $NOME existe..."
+if ! docker ps -a --format '{{.Names}}' | grep -q "^${NOME}$"; then
+    color_echo "red" "❌ Container $NOME não encontrado!"
+    exit 1
+fi
+color_echo "green" "✓ Container encontrado"
+
+# Obter porta atual
+PORTA_ATUAL=$(docker port $NOME 8000 | cut -d ':' -f2)
+if [ -z "$PORTA_ATUAL" ]; then
+    color_echo "yellow" "⚠️ Não foi possível obter a porta atual, gerando nova porta..."
+    PORTA_ATUAL=$((RANDOM % 9000 + 1000))
+    
+    # Verificar se porta está disponível
+    while lsof -i :$PORTA_ATUAL &>/dev/null; do
+        PORTA_ATUAL=$((RANDOM % 9000 + 1000))
     done
+fi
+color_echo "green" "✓ Porta atual: $PORTA_ATUAL"
+
+# Parar e remover container antigo
+color_echo "blue" "🛑 Parando container $NOME..."
+(
+    docker stop $NOME > /dev/null 2>&1
 ) &
-loading_pid=$!
-show_loading $loading_pid "🔍 Verificando porta $PORTA"
-wait $loading_pid
+stop_pid=$!
+show_loading $stop_pid "🛑 Parando container"
+wait $stop_pid
+color_echo "green" "✓ Container parado"
 
-color_echo "green" "✓ Porta selecionada: $PORTA"
+color_echo "blue" "🗑️ Removendo container $NOME..."
+(
+    docker rm $NOME > /dev/null 2>&1
+) &
+rm_pid=$!
+show_loading $rm_pid "🗑️ Removendo container"
+wait $rm_pid
+color_echo "green" "✓ Container removido"
 
-# Gerar número da instância
-color_echo "blue" "🔢 Gerando número da instância..."
-NUM=1
-while docker ps -a --format '{{.Names}}' | grep -q "^${BASE_NAME}_${NUM}$"; do
-    NUM=$((NUM + 1))
-done
-color_echo "green" "✓ Instância #$NUM"
+# Remover imagem antiga
+color_echo "blue" "🗑️ Removendo imagem antiga do $NOME..."
+(
+    docker rmi $NOME > /dev/null 2>&1
+) &
+rmi_pid=$!
+show_loading $rmi_pid "🗑️ Removendo imagem"
+wait $rmi_pid
+color_echo "green" "✓ Imagem antiga removida"
 
-NOME="${BASE_NAME}_${NUM}"
-
-# Build da imagem
-color_echo "blue" "🏗️ Construindo imagem Docker..."
+# Build da nova imagem
+color_echo "blue" "🏗️ Construindo nova imagem para $NOME..."
 (
     docker build -t $NOME . > /dev/null 2>&1
 ) &
 build_pid=$!
-show_loading $build_pid "🏗️ Construindo imagem Docker (isso pode levar alguns segundos)"
+show_loading $build_pid "🏗️ Construindo imagem (isso pode levar alguns segundos)"
 wait $build_pid
 
 if [ $? -eq 0 ]; then
@@ -88,25 +141,25 @@ else
     exit 1
 fi
 
-# Executar container
-color_echo "blue" "🐳 Iniciando container..."
+# Executar novo container
+color_echo "blue" "🐳 Iniciando novo container $NOME..."
 (
-    docker run -d -p $PORTA:8000 --name $NOME $NOME > /dev/null 2>&1
+    docker run -d -p $PORTA_ATUAL:8000 --name $NOME $NOME > /dev/null 2>&1
 ) &
 run_pid=$!
 show_loading $run_pid "🐳 Iniciando container"
 wait $run_pid
 
 if [ $? -eq 0 ]; then
-    color_echo "green" "✓ Container iniciado com sucesso"
+    color_echo "green" "✓ Container reiniciado com sucesso"
 else
     color_echo "red" "❌ Falha ao iniciar container"
     exit 1
 fi
 
 echo ""
-color_echo "green" "✅ $NOME rodando na porta $PORTA"
-color_echo "cyan" "🌐 Acesse: http://localhost:$PORTA"
+color_echo "green" "✅ $NOME reiniciado na porta $PORTA_ATUAL"
+color_echo "cyan" "🌐 Acesse: http://localhost:$PORTA_ATUAL"
 echo ""
 
 # Verificar se o container está realmente rodando
@@ -114,4 +167,6 @@ if docker ps | grep -q $NOME; then
     color_echo "green" "✓ Container está ativo e funcionando"
 else
     color_echo "yellow" "⚠️ Container criado mas não está rodando. Verifique os logs."
+    color_echo "blue" "📝 Logs do container:"
+    docker logs $NOME --tail=20
 fi

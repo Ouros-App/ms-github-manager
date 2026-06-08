@@ -6,10 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Copiar requirements primeiro para melhor cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copiar o restante da aplicação
 COPY app ./app
+COPY .env .
+
+# Verificar templates
 RUN test -f app/templates/workflows/fastapi.yml \
     && test -f app/templates/workflows/frontend.yml \
     && test -f app/templates/workflows/springboot.yml \
