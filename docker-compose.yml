@@ -1,7 +1,7 @@
 services:
   api:
     build: .
-    container_name: fastapi_microservice
+    container_name: ${APP_NAME}_${INSTANCE:-1}
     env_file:
       - .env
     ports:
