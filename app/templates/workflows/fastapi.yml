@@ -82,7 +82,13 @@ jobs:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           if [ "$GITHUB_RUN_NUMBER" = "1" ]; then
-            echo "Skipping pytest on first workflow run."
+            pytest
+            rc=$?
+            if [ "$rc" = "5" ]; then
+              echo "Skipping pytest on first workflow run because no tests were collected."
+              exit 0
+            fi
+            exit "$rc"
           elif find tests -type f \( -name "test_*.py" -o -name "*_test.py" \) 2>/dev/null | grep -q .; then
             pytest
           else
