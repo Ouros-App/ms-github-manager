@@ -54,17 +54,25 @@ carregar_env() {
         exit 1
     fi
 
-    BASE_NAME=$(grep APP_NAME .env | cut -d '=' -f2)
-    if [ -z "$BASE_NAME" ]; then
+    # Parser seguro: só aceita linhas no formato CHAVE=VALOR, ignora comentários e texto solto
+    while IFS='=' read -r key value; do
+        # Pular linhas vazias, comentários e linhas sem '=' (texto solto)
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
+        # Remover aspas do valor se existirem
+        value="${value%\"}"
+        value="${value#\"}"
+        value="${value%\'}"
+        value="${value#\'}"
+        export "$key=$value"
+    done < .env
+
+    if [ -z "$APP_NAME" ]; then
         color_echo "red" "❌ APP_NAME não encontrado no .env"
         exit 1
     fi
-    color_echo "green" "✓ APP_NAME: $BASE_NAME"
 
-    color_echo "blue" "📋 Carregando variáveis do .env..."
-    set -a
-    source .env
-    set +a
+    BASE_NAME="$APP_NAME"
+    color_echo "green" "✓ APP_NAME: $BASE_NAME"
     color_echo "green" "✓ Variáveis carregadas: APP_NAME=$APP_NAME, APP_PORT=${APP_PORT:-8000}"
 }
 
@@ -118,9 +126,13 @@ subir_container() {
     local DOCKER_RUN_CMD="docker run -d -p $porta:8000 --name $nome"
 
     while IFS='=' read -r key value; do
-        [[ -z "$key" || "$key" =~ ^#.*$ ]] && continue
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
         if [[ "$key" != "APP_NAME" && "$key" != "APP_PORT" ]]; then
-            DOCKER_RUN_CMD="$DOCKER_RUN_CMD -e $key=\"$value\""
+            value="${value%\"}"
+            value="${value#\"}"
+            value="${value%\'}"
+            value="${value#\'}"
+            DOCKER_RUN_CMD="$DOCKER_RUN_CMD -e ${key}=${value}"
         fi
     done < .env
 
@@ -146,23 +158,27 @@ verificar_status() {
     local porta=$2
 
     echo ""
-    color_echo "green" "✅ $nome rodando na porta $porta"
+    color_echo "green" "✅ $nome iniciado na porta $porta"
     color_echo "cyan" "🌐 Acesse: http://localhost:$porta"
     echo ""
 
-    if docker ps | grep -q "^.*${nome}"; then
+    # Aguardar 2s para o container estabilizar antes de verificar
+    sleep 2
+
+    if docker ps --format '{{.Names}}' | grep -q "^${nome}$"; then
         color_echo "green" "✓ Container está ativo e funcionando"
         color_echo "blue" "📋 Variáveis de ambiente carregadas do .env:"
         while IFS='=' read -r key value; do
-            [[ -z "$key" || "$key" =~ ^#.*$ ]] && continue
+            [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
             if [[ "$key" != "APP_NAME" && "$key" != "APP_PORT" ]]; then
-                color_echo "yellow" "   - $key=$value"
+                color_echo "yellow" "   - $key"
             fi
         done < .env
     else
-        color_echo "yellow" "⚠️ Container criado mas não está rodando. Verifique os logs."
-        color_echo "blue" "📝 Logs do container:"
-        docker logs $nome --tail=20
+        color_echo "red" "❌ Container subiu mas caiu em seguida. Logs:"
+        docker logs $nome --tail=30 2>&1
+        color_echo "yellow" "⚠️ Verifique os logs acima para identificar o erro."
+        exit 1
     fi
 
     echo ""

@@ -54,11 +54,22 @@ carregar_env() {
         exit 1
     fi
 
-    BASE_NAME=$(grep APP_NAME .env | cut -d '=' -f2)
-    if [ -z "$BASE_NAME" ]; then
+    # Parser seguro: só aceita linhas no formato CHAVE=VALOR, ignora comentários e texto solto
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
+        value="${value%\"}"
+        value="${value#\"}"
+        value="${value%\'}"
+        value="${value#\'}"
+        export "$key=$value"
+    done < .env
+
+    if [ -z "$APP_NAME" ]; then
         color_echo "red" "❌ APP_NAME não encontrado no .env"
         exit 1
     fi
+
+    BASE_NAME="$APP_NAME"
     color_echo "green" "✓ APP_NAME: $BASE_NAME"
 }
 
@@ -150,15 +161,24 @@ buildar_e_subir() {
     fi
 
     echo ""
-    color_echo "green" "✅ ${nome} rodando na porta $porta"
+    color_echo "green" "✅ ${nome} iniciado na porta $porta"
     color_echo "cyan" "🌐 Acesse: http://localhost:$porta"
     echo ""
 
-    color_echo "blue" "📊 Status do container:"
-    docker-compose -f $compose_file ps
+    # Aguardar 2s para o container estabilizar antes de verificar
+    sleep 2
 
-    color_echo "blue" "📝 Últimos logs:"
-    docker-compose -f $compose_file logs --tail=10
+    if docker ps --format '{{.Names}}' | grep -q "^${nome}$"; then
+        color_echo "green" "✓ Container está ativo e funcionando"
+        color_echo "blue" "📊 Status:"
+        docker-compose -f $compose_file ps
+    else
+        color_echo "red" "❌ Container subiu mas caiu em seguida. Logs:"
+        docker logs $nome --tail=30 2>&1
+        color_echo "yellow" "⚠️ Verifique os logs acima para identificar o erro."
+        rm -f $compose_file /tmp/docker_build_${numero}.log /tmp/docker_compose_${numero}.log
+        exit 1
+    fi
 
     # Limpar arquivos temporários
     rm -f $compose_file /tmp/docker_build_${numero}.log /tmp/docker_compose_${numero}.log
