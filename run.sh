@@ -73,6 +73,13 @@ if [ -z "$BASE_NAME" ]; then
 fi
 color_echo "green" "✓ APP_NAME: $BASE_NAME"
 
+# Carregar variáveis do .env para a build
+color_echo "blue" "📋 Carregando variáveis do .env..."
+set -a
+source .env
+set +a
+color_echo "green" "✓ Variáveis carregadas: APP_NAME=$APP_NAME, APP_PORT=${APP_PORT:-8000}"
+
 NOME="${BASE_NAME}_${NUMERO}"
 
 # Verificar se o container existe
@@ -125,10 +132,12 @@ show_loading $rmi_pid "🗑️ Removendo imagem"
 wait $rmi_pid
 color_echo "green" "✓ Imagem antiga removida"
 
-# Build da nova imagem
-color_echo "blue" "🏗️ Construindo nova imagem para $NOME..."
+# Build da nova imagem (com .env incluso)
+color_echo "blue" "🏗️ Construindo nova imagem para $NOME (incluindo .env)..."
 (
-    docker build -t $NOME . > /dev/null 2>&1
+    docker build --build-arg APP_NAME=$APP_NAME \
+                 --build-arg APP_PORT=${APP_PORT:-8000} \
+                 -t $NOME . > /dev/null 2>&1
 ) &
 build_pid=$!
 show_loading $build_pid "🏗️ Construindo imagem (isso pode levar alguns segundos)"
@@ -141,13 +150,31 @@ else
     exit 1
 fi
 
-# Executar novo container
-color_echo "blue" "🐳 Iniciando novo container $NOME..."
+# Executar novo container com as variáveis do .env
+color_echo "blue" "🐳 Iniciando novo container $NOME com configurações do .env..."
+
+# Construir comando docker run com todas as variáveis do .env
+DOCKER_RUN_CMD="docker run -d -p $PORTA_ATUAL:8000 --name $NOME"
+
+# Adicionar variáveis de ambiente do .env (exceto APP_NAME e APP_PORT que já estão no build)
+while IFS='=' read -r key value; do
+    # Pular linhas vazias e comentários
+    [[ -z "$key" || "$key" =~ ^#.*$ ]] && continue
+    # Adicionar variável se não for APP_NAME ou APP_PORT
+    if [[ "$key" != "APP_NAME" && "$key" != "APP_PORT" ]]; then
+        DOCKER_RUN_CMD="$DOCKER_RUN_CMD -e $key=\"$value\""
+    fi
+done < .env
+
+# Adicionar o nome da imagem
+DOCKER_RUN_CMD="$DOCKER_RUN_CMD $NOME"
+
+# Executar o comando
 (
-    docker run -d -p $PORTA_ATUAL:8000 --name $NOME $NOME > /dev/null 2>&1
+    eval $DOCKER_RUN_CMD > /dev/null 2>&1
 ) &
 run_pid=$!
-show_loading $run_pid "🐳 Iniciando container"
+show_loading $run_pid "🐳 Iniciando container com variáveis do .env"
 wait $run_pid
 
 if [ $? -eq 0 ]; then
@@ -165,8 +192,20 @@ echo ""
 # Verificar se o container está realmente rodando
 if docker ps | grep -q $NOME; then
     color_echo "green" "✓ Container está ativo e funcionando"
+    
+    # Mostrar variáveis de ambiente carregadas (opcional, útil para debug)
+    color_echo "blue" "📋 Variáveis de ambiente carregadas do .env:"
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^#.*$ ]] && continue
+        if [[ "$key" != "APP_NAME" && "$key" != "APP_PORT" ]]; then
+            color_echo "yellow" "   - $key=$value"
+        fi
+    done < .env
 else
     color_echo "yellow" "⚠️ Container criado mas não está rodando. Verifique os logs."
     color_echo "blue" "📝 Logs do container:"
     docker logs $NOME --tail=20
 fi
+
+echo ""
+color_echo "green" "✨ Reboot concluído com sucesso!"
