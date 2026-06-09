@@ -140,6 +140,9 @@ jobs:
             echo "sonar.projectKey=${SONAR_PROJECT_KEY:-${owner}_${repo}}"
             echo "sonar.sources=."
             echo "sonar.exclusions=.git/**,.github/**,.venv/**,venv/**,__pycache__/**,dist/**,build/**"
+            if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+              echo "sonar.branch.name=main"
+            fi
           } > sonar-project.properties
 
       - name: SonarCloud Scan
@@ -147,6 +150,15 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
+
+      - name: Publish SonarCloud project
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          project_key="$(grep '^sonar.projectKey=' sonar-project.properties | cut -d= -f2-)"
+          curl -sS -u "${SONAR_TOKEN}:" -X POST "https://sonarcloud.io/api/projects/update_visibility" \
+            -d "project=${project_key}" \
+            -d "visibility=public"
 
   deploy:
     name: deploy
