@@ -81,10 +81,43 @@ jobs:
         run: |
           if [ -f package.json ]; then npm run build --if-present; else test -f README.md; fi
 
+  sonarcloud:
+    name: sonarcloud
+    runs-on: ubuntu-latest
+    needs: ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure SonarCloud
+        env:
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+        run: |
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          repo="${GITHUB_REPOSITORY#*/}"
+          {
+            echo "sonar.organization=${SONAR_ORGANIZATION:-$owner}"
+            echo "sonar.projectKey=${SONAR_PROJECT_KEY:-${owner}_${repo}}"
+            echo "sonar.sources=."
+            echo "sonar.exclusions=.git/**,.github/**,node_modules/**,dist/**,build/**,coverage/**"
+          } > sonar-project.properties
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+
   deploy:
     name: deploy
     runs-on: ubuntu-latest
-    needs: ci
+    needs:
+      - ci
+      - sonarcloud
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Checkout

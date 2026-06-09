@@ -9,8 +9,8 @@ O servico usa `GH_TOKEN` ou `GITHUB_TOKEN` definido no `.env` para autenticar na
 - Lista repositorios de template da organizacao cujo nome termina em `-template`.
 - Cria repositorio no modo cru com README, licenca MIT e `.gitignore` por linguagem quando disponivel.
 - Cria repositorio a partir de um template existente na mesma organizacao.
-- Aplica workflow de CI/CD para React + TypeScript + Vite, Java Spring Boot e Python FastAPI.
-- Aplica protecao na branch `main`, exigindo pull request, uma aprovacao, status checks `ci` e `conventional-commits`, historico linear e conversas resolvidas.
+- Aplica workflow de CI/CD com build, testes e SonarCloud para React + TypeScript + Vite, Java Spring Boot e Python FastAPI.
+- Aplica protecao na branch `main`, exigindo pull request, uma aprovacao, status checks `ci`, `conventional-commits` e `sonarcloud`, historico linear e conversas resolvidas.
 - Expoe Swagger UI em `/docs`, ReDoc em `/redoc` e OpenAPI JSON em `/openapi.json`.
 - Expoe status de criacao por `creation_id`.
 
@@ -29,6 +29,7 @@ Variaveis principais:
 | `APP_PORT` | `8000` | Porta publicada no host pelo Docker Compose. |
 | `GITHUB_ORG_LOGIN` | `Ouros-App` | Login/slug da organizacao no GitHub. |
 | `GH_TOKEN` | - | Token do GitHub usado pelo `PyGithub`. Nao commitar este valor. |
+| `SONAR_CLOUD_TOKEN` | - | Token usado para criar o secret `SONAR_TOKEN` nos repositorios gerados. |
 | `TEMPLATE_SUFFIX` | `-template` | Sufixo usado para descobrir repositorios de template. |
 | `DEFAULT_BRANCH` | `main` | Branch principal protegida pelo servico. |
 | `GH_TIMEOUT_SECONDS` | `120` | Timeout para as chamadas do cliente GitHub. |
@@ -78,7 +79,7 @@ Valores aceitos para `visibility`: `private`, `public`, `internal`.
 
 Valores aceitos para `language`: `frontend`, `springboot`, `fastapi`.
 
-O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. Backends sobem PostgreSQL, MongoDB e Redis no job de CI para testes de integracao.
+O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. Backends sobem PostgreSQL, MongoDB e Redis no job de CI para testes de integracao. O SonarCloud roda em um job separado chamado `sonarcloud` e usa `SONAR_TOKEN` como secret do repositorio.
 Os templates usados ficam em `app/templates/workflows`.
 
 ### Criar repositorio a partir de template

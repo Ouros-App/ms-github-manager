@@ -101,6 +101,8 @@ class GitHubRepositoryManager:
             repo = await asyncio.to_thread(self._create_bare_repository_sync, payload)
             await self._step(creation_id, "Aguardando branch main")
             await asyncio.to_thread(self._wait_until_repository_ready_sync, repo.name)
+            await self._step(creation_id, "Configurando SonarCloud")
+            await asyncio.to_thread(self._put_sonar_secret_sync, repo.name)
 
             if self._gitignore_template(payload.language) is None:
                 await self._step(creation_id, "Criando .gitignore generico")
@@ -134,6 +136,8 @@ class GitHubRepositoryManager:
             repo = await asyncio.to_thread(self._create_from_template_sync, payload)
             await self._step(creation_id, "Aguardando copia do template")
             await asyncio.to_thread(self._wait_until_repository_ready_sync, repo.name)
+            await self._step(creation_id, "Configurando SonarCloud")
+            await asyncio.to_thread(self._put_sonar_secret_sync, repo.name)
 
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(
@@ -205,6 +209,15 @@ class GitHubRepositoryManager:
             "Configure CI/CD",
         )
 
+    def _put_sonar_secret_sync(self, repository_name: str) -> None:
+        if not settings.SONAR_CLOUD_TOKEN:
+            return
+        repo = self._repo(repository_name)
+        try:
+            repo.create_secret("SONAR_TOKEN", settings.SONAR_CLOUD_TOKEN)
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
     def _put_file_sync(
         self,
         repository_name: str,
@@ -238,7 +251,7 @@ class GitHubRepositoryManager:
             branch = repo.get_branch(settings.DEFAULT_BRANCH)
             branch.edit_protection(
                 strict=True,
-                contexts=["ci", "conventional-commits"],
+                contexts=["ci", "conventional-commits", "sonarcloud"],
                 enforce_admins=True,
                 dismiss_stale_reviews=True,
                 require_code_owner_reviews=False,
