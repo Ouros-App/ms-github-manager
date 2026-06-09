@@ -91,7 +91,7 @@ fi
 color_echo "green" "✓ Container encontrado"
 
 # Obter porta atual
-PORTA_ATUAL=$(docker port $NOME 8000 | cut -d ':' -f2)
+PORTA_ATUAL=$(docker port $NOME 8000 2>/dev/null | cut -d ':' -f2)
 if [ -z "$PORTA_ATUAL" ]; then
     color_echo "yellow" "⚠️ Não foi possível obter a porta atual, gerando nova porta..."
     PORTA_ATUAL=$((RANDOM % 9000 + 1000))
@@ -115,38 +115,51 @@ color_echo "green" "✓ Container parado"
 
 color_echo "blue" "🗑️ Removendo container $NOME..."
 (
-    docker rm $NOME > /dev/null 2>&1
+    docker rm -f $NOME > /dev/null 2>&1
 ) &
 rm_pid=$!
 show_loading $rm_pid "🗑️ Removendo container"
 wait $rm_pid
 color_echo "green" "✓ Container removido"
 
-# Remover imagem antiga
+# Remover imagem antiga (força remoção mesmo se houver outras tags)
 color_echo "blue" "🗑️ Removendo imagem antiga do $NOME..."
 (
-    docker rmi $NOME > /dev/null 2>&1
+    docker rmi -f $NOME > /dev/null 2>&1
 ) &
 rmi_pid=$!
 show_loading $rmi_pid "🗑️ Removendo imagem"
 wait $rmi_pid
 color_echo "green" "✓ Imagem antiga removida"
 
-# Build da nova imagem (com .env incluso)
-color_echo "blue" "🏗️ Construindo nova imagem para $NOME (incluindo .env)..."
+# Limpar build cache do Docker para garantir rebuild do zero
+color_echo "blue" "🧹 Limpando cache de build..."
 (
-    docker build --build-arg APP_NAME=$APP_NAME \
+    docker builder prune -f > /dev/null 2>&1
+) &
+prune_pid=$!
+show_loading $prune_pid "🧹 Limpando cache"
+wait $prune_pid
+color_echo "green" "✓ Cache limpo"
+
+# Build da nova imagem SEM cache (--no-cache garante rebuild do zero)
+color_echo "blue" "🏗️ Construindo nova imagem para $NOME (sem cache, do zero)..."
+(
+    docker build --no-cache --pull \
+                 --build-arg APP_NAME=$APP_NAME \
                  --build-arg APP_PORT=${APP_PORT:-8000} \
-                 -t $NOME . > /dev/null 2>&1
+                 -t $NOME . > /tmp/docker_build_${NOME}.log 2>&1
 ) &
 build_pid=$!
-show_loading $build_pid "🏗️ Construindo imagem (isso pode levar alguns segundos)"
+show_loading $build_pid "🏗️ Construindo imagem do zero (isso pode levar alguns minutos)"
 wait $build_pid
 
 if [ $? -eq 0 ]; then
     color_echo "green" "✓ Imagem construída com sucesso"
 else
     color_echo "red" "❌ Falha na construção da imagem"
+    color_echo "yellow" "📋 Últimas linhas do log de build:"
+    tail -10 /tmp/docker_build_${NOME}.log
     exit 1
 fi
 
@@ -193,7 +206,7 @@ echo ""
 if docker ps | grep -q $NOME; then
     color_echo "green" "✓ Container está ativo e funcionando"
     
-    # Mostrar variáveis de ambiente carregadas (opcional, útil para debug)
+    # Mostrar variáveis de ambiente carregadas (útil para debug)
     color_echo "blue" "📋 Variáveis de ambiente carregadas do .env:"
     while IFS='=' read -r key value; do
         [[ -z "$key" || "$key" =~ ^#.*$ ]] && continue
@@ -206,6 +219,9 @@ else
     color_echo "blue" "📝 Logs do container:"
     docker logs $NOME --tail=20
 fi
+
+# Limpar log temporário
+rm -f /tmp/docker_build_${NOME}.log
 
 echo ""
 color_echo "green" "✨ Reboot concluído com sucesso!"

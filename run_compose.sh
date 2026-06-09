@@ -74,6 +74,7 @@ fi
 color_echo "green" "✓ APP_NAME: $BASE_NAME"
 
 NOME="${BASE_NAME}_${NUMERO}"
+COMPOSE_FILE="docker-compose.${NUMERO}.yml"
 
 # Verificar se o container existe
 color_echo "blue" "🔍 Verificando se a instância $NUMERO existe..."
@@ -84,7 +85,7 @@ fi
 color_echo "green" "✓ Instância encontrada"
 
 # Obter porta atual do container
-PORTA_ATUAL=$(docker port $NOME 8000 | cut -d ':' -f2)
+PORTA_ATUAL=$(docker port $NOME 8000 2>/dev/null | cut -d ':' -f2)
 if [ -z "$PORTA_ATUAL" ]; then
     color_echo "yellow" "⚠️ Não foi possível obter a porta atual, gerando nova porta..."
     PORTA_ATUAL=$((RANDOM % 9000 + 1000))
@@ -96,14 +97,13 @@ if [ -z "$PORTA_ATUAL" ]; then
 fi
 color_echo "green" "✓ Porta atual: $PORTA_ATUAL"
 
-# Parar o compose específico (precisamos usar docker-compose com projeto separado)
-color_echo "blue" "🛑 Parando containers da instância $NUMERO..."
-
 # Criar arquivo docker-compose específico para esta instância
-cat > docker-compose.${NUMERO}.yml << EOF
+cat > $COMPOSE_FILE << EOF
 services:
   api:
-    build: .
+    build:
+      context: .
+      no_cache: true
     container_name: ${BASE_NAME}_${NUMERO}
     env_file:
       - .env
@@ -112,52 +112,65 @@ services:
     restart: unless-stopped
 EOF
 
-# Parar containers específicos da instância
+# Parar e remover containers + imagens da instância de uma só vez
+color_echo "blue" "🛑 Parando e removendo containers e imagens da instância $NUMERO..."
 (
-    docker-compose -f docker-compose.${NUMERO}.yml down > /dev/null 2>&1
+    docker-compose -f $COMPOSE_FILE down --rmi local --volumes --remove-orphans > /dev/null 2>&1
 ) &
 down_pid=$!
-show_loading $down_pid "🛑 Parando containers"
+show_loading $down_pid "🛑 Parando e removendo tudo"
 wait $down_pid
-color_echo "green" "✓ Containers parados"
+color_echo "green" "✓ Containers e imagens removidos"
 
-# Remover imagem antiga
-color_echo "blue" "🗑️ Removendo imagem antiga..."
+# Remover imagem pelo nome caso ainda exista (fallback)
+color_echo "blue" "🗑️ Garantindo remoção da imagem $NOME..."
 (
-    docker-compose -f docker-compose.${NUMERO}.yml down --rmi local > /dev/null 2>&1
+    docker rmi -f $NOME > /dev/null 2>&1
+    # Remover imagens sem tag (dangling) que possam ter sobrado
+    docker image prune -f > /dev/null 2>&1
 ) &
-clean_pid=$!
-show_loading $clean_pid "🗑️ Removendo imagens antigas"
-wait $clean_pid
-color_echo "green" "✓ Imagens antigas removidas"
+rmi_pid=$!
+show_loading $rmi_pid "🗑️ Removendo imagens residuais"
+wait $rmi_pid
+color_echo "green" "✓ Imagens limpas"
 
-# Reconstruir imagem
-color_echo "blue" "🔨 Reconstruindo imagem (com --no-cache)..."
+# Limpar build cache para garantir rebuild do zero
+color_echo "blue" "🧹 Limpando cache de build..."
 (
-    docker-compose -f docker-compose.${NUMERO}.yml build --no-cache > /tmp/docker_build_${NUMERO}.log 2>&1
+    docker builder prune -f > /dev/null 2>&1
 ) &
-build_pid=$!
-show_loading $build_pid "🔨 Build da imagem (isso pode levar alguns minutos)"
-wait $build_pid
-
-if [ $? -ne 0 ]; then
-    color_echo "red" "❌ Falha ao construir a imagem"
-    color_echo "yellow" "📋 Últimas linhas do log de build:"
-    tail -10 /tmp/docker_build_${NUMERO}.log
-    exit 1
-fi
-color_echo "green" "✓ Imagem reconstruída com sucesso"
+prune_pid=$!
+show_loading $prune_pid "🧹 Limpando cache"
+wait $prune_pid
+color_echo "green" "✓ Cache limpo"
 
 # Exportar variáveis para a instância
 export APP_PORT=$PORTA_ATUAL
 export INSTANCE=$NUMERO
 export APP_NAME=$BASE_NAME
 
+# Reconstruir imagem sem cache e subir
+color_echo "blue" "🔨 Reconstruindo imagem do zero (sem cache)..."
+(
+    docker-compose -f $COMPOSE_FILE build --no-cache --pull > /tmp/docker_build_${NUMERO}.log 2>&1
+) &
+build_pid=$!
+show_loading $build_pid "🔨 Build da imagem do zero (isso pode levar alguns minutos)"
+wait $build_pid
+
+if [ $? -ne 0 ]; then
+    color_echo "red" "❌ Falha ao construir a imagem"
+    color_echo "yellow" "📋 Últimas linhas do log de build:"
+    tail -10 /tmp/docker_build_${NUMERO}.log
+    rm -f $COMPOSE_FILE /tmp/docker_build_${NUMERO}.log /tmp/docker_compose_${NUMERO}.log
+    exit 1
+fi
+color_echo "green" "✓ Imagem reconstruída com sucesso"
+
 # Iniciar containers
 color_echo "blue" "🐳 Iniciando containers com docker-compose..."
-
 (
-    docker-compose -f docker-compose.${NUMERO}.yml up -d > /tmp/docker_compose_${NUMERO}.log 2>&1
+    docker-compose -f $COMPOSE_FILE up -d > /tmp/docker_compose_${NUMERO}.log 2>&1
 ) &
 compose_pid=$!
 show_loading $compose_pid "🐳 Subindo containers"
@@ -169,6 +182,7 @@ else
     color_echo "red" "❌ Falha ao iniciar containers"
     color_echo "yellow" "📋 Últimas linhas do log:"
     tail -10 /tmp/docker_compose_${NUMERO}.log
+    rm -f $COMPOSE_FILE /tmp/docker_build_${NUMERO}.log /tmp/docker_compose_${NUMERO}.log
     exit 1
 fi
 
@@ -179,14 +193,14 @@ echo ""
 
 # Mostrar status
 color_echo "blue" "📊 Status do container:"
-docker-compose -f docker-compose.${NUMERO}.yml ps
+docker-compose -f $COMPOSE_FILE ps
 
 # Verificar logs recentes
 color_echo "blue" "📝 Últimos logs:"
-docker-compose -f docker-compose.${NUMERO}.yml logs --tail=10
+docker-compose -f $COMPOSE_FILE logs --tail=10
+
+# Limpar arquivos temporários
+rm -f $COMPOSE_FILE /tmp/docker_build_${NUMERO}.log /tmp/docker_compose_${NUMERO}.log
 
 echo ""
 color_echo "green" "✨ Reboot concluído com sucesso!"
-
-# Limpar arquivos temporários (opcional)
-# rm docker-compose.${NUMERO}.yml
