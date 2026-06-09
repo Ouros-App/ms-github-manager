@@ -123,10 +123,8 @@ subir_container() {
 
     color_echo "blue" "🐳 Iniciando container $nome na porta $porta..."
 
-    # Comando base
-    local DOCKER_RUN_CMD="docker run -d -p $porta:8000 --name $nome"
-
-    # Adicionar variáveis do .env (exceto APP_NAME e APP_PORT)
+    local args=("-d" "-p" "${porta}:8000" "--name" "$nome")
+    
     while IFS='=' read -r key value; do
         [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
         if [[ "$key" != "APP_NAME" && "$key" != "APP_PORT" ]]; then
@@ -134,23 +132,15 @@ subir_container() {
             value="${value#\"}"
             value="${value%\'}"
             value="${value#\'}"
-            DOCKER_RUN_CMD="$DOCKER_RUN_CMD -e ${key}=${value}"
+            args+=("-e" "${key}=${value}")
         fi
     done < .env
-
-    # Adicionar o nome da imagem no final
-    DOCKER_RUN_CMD="$DOCKER_RUN_CMD $nome"
-
-    # Debug: mostrar o comando (opcional)
-    color_echo "yellow" "📝 Comando: $DOCKER_RUN_CMD"
-
-    # Executar sem esconder erros (temporariamente para debug)
-    if eval $DOCKER_RUN_CMD; then
-        color_echo "green" "✓ Container iniciado com sucesso"
-    else
-        color_echo "red" "❌ Falha ao iniciar container"
-        return 1
-    fi
+    
+    args+=("$nome")
+    
+    color_echo "yellow" "📝 Executando docker run com ${#args[@]} argumentos"
+    
+    docker run "${args[@]}"
 }
 
 verificar_status() {
