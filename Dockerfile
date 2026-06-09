@@ -27,5 +27,5 @@ RUN test -f app/templates/workflows/fastapi.yml \
 
 EXPOSE ${APP_PORT}
 
-# Correção: usar formato shell ou sh -c
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT}
+# CORREÇÃO: Usar sh -c para garantir expansão da variável
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-8000}"]
