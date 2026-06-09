@@ -31,176 +31,245 @@ color_echo() {
 
 # Help
 show_help() {
-    echo "Uso: $0 --reboot {numero}"
+    echo "Uso: $0 [--reboot NUMERO]"
     echo ""
     echo "Opções:"
-    echo "  --reboot NUMERO    Reinicia o compose com o número da instância especificada"
+    echo "  (sem argumentos)   Builda a imagem e sobe uma nova instância com número incremental"
+    echo "  --reboot NUMERO    Para, remove e rebuilda a instância com o número especificado"
     echo "  -h, --help         Mostra esta ajuda"
     echo ""
-    echo "Exemplo:"
-    echo "  $0 --reboot 1      # Reinicia a instância 1 do compose"
+    echo "Exemplos:"
+    echo "  $0                 # Sobe nova instância (ex: minha_app_1, minha_app_2, ...)"
+    echo "  $0 --reboot 1      # Rebuilda do zero a instância minha_app_1"
 }
 
-# Verificar argumentos
-if [ $# -ne 2 ] || [ "$1" != "--reboot" ]; then
-    show_help
-    exit 1
-fi
+# ─────────────────────────────────────────
+# Funções principais
+# ─────────────────────────────────────────
 
-NUMERO=$2
+carregar_env() {
+    color_echo "blue" "📁 Verificando configurações..."
+    if [ ! -f .env ]; then
+        color_echo "red" "❌ Arquivo .env não encontrado!"
+        exit 1
+    fi
 
-# Validar número
-if ! [[ "$NUMERO" =~ ^[0-9]+$ ]]; then
-    color_echo "red" "❌ Número inválido: $NUMERO"
-    exit 1
-fi
+    BASE_NAME=$(grep APP_NAME .env | cut -d '=' -f2)
+    if [ -z "$BASE_NAME" ]; then
+        color_echo "red" "❌ APP_NAME não encontrado no .env"
+        exit 1
+    fi
+    color_echo "green" "✓ APP_NAME: $BASE_NAME"
+}
 
-echo ""
-color_echo "cyan" "🔄 REINICIANDO COMPOSE INSTÂNCIA #$NUMERO..."
-echo ""
-
-# Verificar arquivo .env
-color_echo "blue" "📁 Verificando configurações..."
-if [ ! -f .env ]; then
-    color_echo "red" "❌ Arquivo .env não encontrado!"
-    exit 1
-fi
-
-BASE_NAME=$(grep APP_NAME .env | cut -d '=' -f2)
-if [ -z "$BASE_NAME" ]; then
-    color_echo "red" "❌ APP_NAME não encontrado no .env"
-    exit 1
-fi
-color_echo "green" "✓ APP_NAME: $BASE_NAME"
-
-NOME="${BASE_NAME}_${NUMERO}"
-COMPOSE_FILE="docker-compose.${NUMERO}.yml"
-
-# Verificar se o container existe
-color_echo "blue" "🔍 Verificando se a instância $NUMERO existe..."
-if ! docker ps -a --format '{{.Names}}' | grep -q "^${NOME}$"; then
-    color_echo "red" "❌ Instância $NOME não encontrada!"
-    exit 1
-fi
-color_echo "green" "✓ Instância encontrada"
-
-# Obter porta atual do container
-PORTA_ATUAL=$(docker port $NOME 8000 2>/dev/null | cut -d ':' -f2)
-if [ -z "$PORTA_ATUAL" ]; then
-    color_echo "yellow" "⚠️ Não foi possível obter a porta atual, gerando nova porta..."
-    PORTA_ATUAL=$((RANDOM % 9000 + 1000))
-    
-    # Verificar se porta está disponível
-    while lsof -i :$PORTA_ATUAL &>/dev/null; do
-        PORTA_ATUAL=$((RANDOM % 9000 + 1000))
+proxima_porta_livre() {
+    local porta=$((RANDOM % 9000 + 1000))
+    while lsof -i :$porta &>/dev/null; do
+        porta=$((RANDOM % 9000 + 1000))
     done
-fi
-color_echo "green" "✓ Porta atual: $PORTA_ATUAL"
+    echo $porta
+}
 
-# Criar arquivo docker-compose específico para esta instância
-cat > $COMPOSE_FILE << EOF
+gerar_compose_file() {
+    local numero=$1
+    local porta=$2
+    local base_name=$3
+    local compose_file="docker-compose.${numero}.yml"
+
+    cat > $compose_file << EOF
 services:
   api:
     build:
       context: .
       no_cache: true
-    container_name: ${BASE_NAME}_${NUMERO}
+    container_name: ${base_name}_${numero}
     env_file:
       - .env
     ports:
-      - "${PORTA_ATUAL}:8000"
+      - "${porta}:8000"
     restart: unless-stopped
 EOF
+    echo $compose_file
+}
 
-# Parar e remover containers + imagens da instância de uma só vez
-color_echo "blue" "🛑 Parando e removendo containers e imagens da instância $NUMERO..."
-(
-    docker-compose -f $COMPOSE_FILE down --rmi local --volumes --remove-orphans > /dev/null 2>&1
-) &
-down_pid=$!
-show_loading $down_pid "🛑 Parando e removendo tudo"
-wait $down_pid
-color_echo "green" "✓ Containers e imagens removidos"
+buildar_e_subir() {
+    local numero=$1
+    local porta=$2
+    local nome="${BASE_NAME}_${numero}"
+    local compose_file
+    compose_file=$(gerar_compose_file "$numero" "$porta" "$BASE_NAME")
 
-# Remover imagem pelo nome caso ainda exista (fallback)
-color_echo "blue" "🗑️ Garantindo remoção da imagem $NOME..."
-(
-    docker rmi -f $NOME > /dev/null 2>&1
-    # Remover imagens sem tag (dangling) que possam ter sobrado
-    docker image prune -f > /dev/null 2>&1
-) &
-rmi_pid=$!
-show_loading $rmi_pid "🗑️ Removendo imagens residuais"
-wait $rmi_pid
-color_echo "green" "✓ Imagens limpas"
+    export APP_PORT=$porta
+    export INSTANCE=$numero
+    export APP_NAME=$BASE_NAME
 
-# Limpar build cache para garantir rebuild do zero
-color_echo "blue" "🧹 Limpando cache de build..."
-(
-    docker builder prune -f > /dev/null 2>&1
-) &
-prune_pid=$!
-show_loading $prune_pid "🧹 Limpando cache"
-wait $prune_pid
-color_echo "green" "✓ Cache limpo"
+    # Limpar cache
+    color_echo "blue" "🧹 Limpando cache de build..."
+    (
+        docker builder prune -f > /dev/null 2>&1
+    ) &
+    show_loading $! "🧹 Limpando cache"
+    wait $!
+    color_echo "green" "✓ Cache limpo"
 
-# Exportar variáveis para a instância
-export APP_PORT=$PORTA_ATUAL
-export INSTANCE=$NUMERO
-export APP_NAME=$BASE_NAME
+    # Build sem cache
+    color_echo "blue" "🔨 Construindo imagem do zero (sem cache)..."
+    (
+        docker-compose -f $compose_file build --no-cache --pull > /tmp/docker_build_${numero}.log 2>&1
+    ) &
+    local build_pid=$!
+    show_loading $build_pid "🔨 Build da imagem do zero (isso pode levar alguns minutos)"
+    wait $build_pid
 
-# Reconstruir imagem sem cache e subir
-color_echo "blue" "🔨 Reconstruindo imagem do zero (sem cache)..."
-(
-    docker-compose -f $COMPOSE_FILE build --no-cache --pull > /tmp/docker_build_${NUMERO}.log 2>&1
-) &
-build_pid=$!
-show_loading $build_pid "🔨 Build da imagem do zero (isso pode levar alguns minutos)"
-wait $build_pid
+    if [ $? -ne 0 ]; then
+        color_echo "red" "❌ Falha ao construir a imagem"
+        color_echo "yellow" "📋 Últimas linhas do log de build:"
+        tail -10 /tmp/docker_build_${numero}.log
+        rm -f $compose_file /tmp/docker_build_${numero}.log
+        exit 1
+    fi
+    color_echo "green" "✓ Imagem construída com sucesso"
 
-if [ $? -ne 0 ]; then
-    color_echo "red" "❌ Falha ao construir a imagem"
-    color_echo "yellow" "📋 Últimas linhas do log de build:"
-    tail -10 /tmp/docker_build_${NUMERO}.log
-    rm -f $COMPOSE_FILE /tmp/docker_build_${NUMERO}.log /tmp/docker_compose_${NUMERO}.log
-    exit 1
-fi
-color_echo "green" "✓ Imagem reconstruída com sucesso"
+    # Subir container
+    color_echo "blue" "🐳 Iniciando container com docker-compose..."
+    (
+        docker-compose -f $compose_file up -d > /tmp/docker_compose_${numero}.log 2>&1
+    ) &
+    local up_pid=$!
+    show_loading $up_pid "🐳 Subindo container"
+    wait $up_pid
 
-# Iniciar containers
-color_echo "blue" "🐳 Iniciando containers com docker-compose..."
-(
-    docker-compose -f $COMPOSE_FILE up -d > /tmp/docker_compose_${NUMERO}.log 2>&1
-) &
-compose_pid=$!
-show_loading $compose_pid "🐳 Subindo containers"
-wait $compose_pid
+    if [ $? -eq 0 ]; then
+        color_echo "green" "✓ Container iniciado com sucesso"
+    else
+        color_echo "red" "❌ Falha ao iniciar container"
+        color_echo "yellow" "📋 Últimas linhas do log:"
+        tail -10 /tmp/docker_compose_${numero}.log
+        rm -f $compose_file /tmp/docker_build_${numero}.log /tmp/docker_compose_${numero}.log
+        exit 1
+    fi
 
-if [ $? -eq 0 ]; then
-    color_echo "green" "✓ Containers iniciados com sucesso"
+    echo ""
+    color_echo "green" "✅ ${nome} rodando na porta $porta"
+    color_echo "cyan" "🌐 Acesse: http://localhost:$porta"
+    echo ""
+
+    color_echo "blue" "📊 Status do container:"
+    docker-compose -f $compose_file ps
+
+    color_echo "blue" "📝 Últimos logs:"
+    docker-compose -f $compose_file logs --tail=10
+
+    # Limpar arquivos temporários
+    rm -f $compose_file /tmp/docker_build_${numero}.log /tmp/docker_compose_${numero}.log
+
+    echo ""
+    color_echo "green" "✨ Concluído com sucesso!"
+}
+
+# ─────────────────────────────────────────
+# Modo: NOVA instância incremental
+# ─────────────────────────────────────────
+
+modo_novo() {
+    echo ""
+    color_echo "cyan" "🚀 SUBINDO NOVA INSTÂNCIA COMPOSE..."
+    echo ""
+
+    carregar_env
+
+    # Descobrir próximo número disponível
+    local numero=1
+    while docker ps -a --format '{{.Names}}' | grep -q "^${BASE_NAME}_${numero}$"; do
+        numero=$((numero + 1))
+    done
+    color_echo "green" "✓ Próximo número disponível: $numero"
+
+    local porta
+    porta=$(proxima_porta_livre)
+    color_echo "green" "✓ Porta disponível: $porta"
+
+    buildar_e_subir "$numero" "$porta"
+}
+
+# ─────────────────────────────────────────
+# Modo: REBOOT de instância existente
+# ─────────────────────────────────────────
+
+modo_reboot() {
+    local NUMERO=$1
+
+    echo ""
+    color_echo "cyan" "🔄 REINICIANDO COMPOSE INSTÂNCIA #$NUMERO..."
+    echo ""
+
+    carregar_env
+
+    local NOME="${BASE_NAME}_${NUMERO}"
+
+    # Verificar se a instância existe
+    color_echo "blue" "🔍 Verificando se a instância $NUMERO existe..."
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${NOME}$"; then
+        color_echo "red" "❌ Instância $NOME não encontrada!"
+        exit 1
+    fi
+    color_echo "green" "✓ Instância encontrada"
+
+    # Obter porta atual
+    local PORTA_ATUAL
+    PORTA_ATUAL=$(docker port $NOME 8000 2>/dev/null | cut -d ':' -f2)
+    if [ -z "$PORTA_ATUAL" ]; then
+        color_echo "yellow" "⚠️ Não foi possível obter a porta atual, gerando nova porta..."
+        PORTA_ATUAL=$(proxima_porta_livre)
+    fi
+    color_echo "green" "✓ Porta: $PORTA_ATUAL"
+
+    # Criar compose temporário para fazer o down correto
+    local COMPOSE_FILE
+    COMPOSE_FILE=$(gerar_compose_file "$NUMERO" "$PORTA_ATUAL" "$BASE_NAME")
+
+    # Parar e remover container + imagem
+    color_echo "blue" "🛑 Parando e removendo instância $NUMERO..."
+    (
+        docker-compose -f $COMPOSE_FILE down --rmi local --volumes --remove-orphans > /dev/null 2>&1
+    ) &
+    local down_pid=$!
+    show_loading $down_pid "🛑 Parando e removendo tudo"
+    wait $down_pid
+    color_echo "green" "✓ Containers e imagens removidos"
+
+    # Garantir remoção da imagem e dangling
+    color_echo "blue" "🗑️ Garantindo remoção de imagens residuais..."
+    (
+        docker rmi -f $NOME > /dev/null 2>&1
+        docker image prune -f > /dev/null 2>&1
+    ) &
+    local rmi_pid=$!
+    show_loading $rmi_pid "🗑️ Removendo imagens residuais"
+    wait $rmi_pid
+    color_echo "green" "✓ Imagens limpas"
+
+    buildar_e_subir "$NUMERO" "$PORTA_ATUAL"
+}
+
+# ─────────────────────────────────────────
+# Roteamento de argumentos
+# ─────────────────────────────────────────
+
+if [ $# -eq 0 ]; then
+    modo_novo
+
+elif [ $# -eq 2 ] && [ "$1" = "--reboot" ]; then
+    if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+        color_echo "red" "❌ Número inválido: $2"
+        exit 1
+    fi
+    modo_reboot "$2"
+
+elif [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_help
+
 else
-    color_echo "red" "❌ Falha ao iniciar containers"
-    color_echo "yellow" "📋 Últimas linhas do log:"
-    tail -10 /tmp/docker_compose_${NUMERO}.log
-    rm -f $COMPOSE_FILE /tmp/docker_build_${NUMERO}.log /tmp/docker_compose_${NUMERO}.log
+    show_help
     exit 1
 fi
-
-echo ""
-color_echo "green" "✅ ${BASE_NAME}_${NUMERO} reiniciado na porta $PORTA_ATUAL"
-color_echo "cyan" "🌐 Acesse: http://localhost:$PORTA_ATUAL"
-echo ""
-
-# Mostrar status
-color_echo "blue" "📊 Status do container:"
-docker-compose -f $COMPOSE_FILE ps
-
-# Verificar logs recentes
-color_echo "blue" "📝 Últimos logs:"
-docker-compose -f $COMPOSE_FILE logs --tail=10
-
-# Limpar arquivos temporários
-rm -f $COMPOSE_FILE /tmp/docker_build_${NUMERO}.log /tmp/docker_compose_${NUMERO}.log
-
-echo ""
-color_echo "green" "✨ Reboot concluído com sucesso!"
