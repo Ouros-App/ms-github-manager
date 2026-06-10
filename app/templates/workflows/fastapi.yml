@@ -9,8 +9,10 @@ on:
       - main
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
+  security-events: write
 
 jobs:
   conventional-commits:
@@ -159,3 +161,22 @@ jobs:
           curl -sS -u "${SONAR_TOKEN}:" -X POST "https://sonarcloud.io/api/projects/update_visibility" \
             -d "project=${project_key}" \
             -d "visibility=public"
+
+  codeql:
+    name: codeql
+    runs-on: ubuntu-latest
+    needs: ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - name: Analyze with CodeQL
+        uses: github/codeql-action/analyze@v3

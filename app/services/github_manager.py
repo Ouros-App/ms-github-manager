@@ -430,7 +430,7 @@ class CLASS_NAMETests {
             branch = repo.get_branch(settings.DEFAULT_BRANCH)
             branch.edit_protection(
                 strict=True,
-                contexts=["ci", "conventional-commits", "sonarcloud"],
+                contexts=["ci", "conventional-commits", "sonarcloud", "codeql"],
                 enforce_admins=True,
                 dismiss_stale_reviews=True,
                 require_code_owner_reviews=False,
