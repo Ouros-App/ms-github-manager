@@ -79,7 +79,7 @@ Valores aceitos para `visibility`: `private`, `public`, `internal`.
 
 Valores aceitos para `language`: `frontend`, `springboot`, `fastapi`.
 
-O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. O template Spring gera um esqueleto REST com `build.gradle`, `settings.gradle`, controllers, teste basico e pacote Java derivado do nome do repositorio, como `com.ourosapp.ordersapi` para um repo `orders-api`. O SonarCloud roda em um job separado chamado `sonarcloud` e usa `SONAR_TOKEN` como secret do repositorio. O GitHub CodeQL roda em paralelo no job `codeql`. O deploy nao faz parte desse workflow: releases podem disparar outra pipeline separada.
+O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. O template Spring gera um esqueleto REST com `build.gradle`, `settings.gradle`, controllers, teste basico e pacote Java derivado do nome do repositorio, descartando o prefixo `ms-` quando existir. Exemplo: `ms-orders-api` vira `com.ourosapp.ordersapi` e `OrdersApiApplication`. O SonarCloud roda em um job separado chamado `sonarcloud` e usa `SONAR_TOKEN` como secret do repositorio. O GitHub CodeQL roda em paralelo no job `codeql`. O deploy nao faz parte desse workflow: releases podem disparar outra pipeline separada.
 Os templates usados ficam em `app/templates/workflows`.
 
 ### Criar repositorio a partir de template

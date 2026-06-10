@@ -144,6 +144,10 @@ class GitHubRepositoryManager:
             await self._step(creation_id, "Configurando SonarCloud")
             await asyncio.to_thread(self._put_sonar_secret_sync, repo.name)
 
+            if self._template_language(payload.template_name) == "springboot":
+                await self._step(creation_id, "Aplicando estrutura Spring REST")
+                await asyncio.to_thread(self._put_springboot_scaffold_sync, repo.name)
+
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(
                 self._put_workflow_sync,
@@ -374,7 +378,8 @@ class CLASS_NAMETests {
 """.replace("PACKAGE_NAME", package_name).replace("CLASS_NAME", class_name)
 
     def _springboot_package_name(self, repository_name: str) -> str:
-        normalized = re.sub(r"[^a-z0-9]+", "", repository_name.lower())
+        normalized = re.sub(r"^ms[-_.]?", "", repository_name.lower())
+        normalized = re.sub(r"[^a-z0-9]+", "", normalized)
         if not normalized:
             normalized = "app"
         if normalized[0].isdigit():
@@ -382,7 +387,8 @@ class CLASS_NAMETests {
         return f"com.ourosapp.{normalized}"
 
     def _springboot_application_class_name(self, repository_name: str) -> str:
-        parts = re.findall(r"[A-Za-z0-9]+", repository_name)
+        sanitized_name = re.sub(r"^ms[-_.]?", "", repository_name, flags=re.IGNORECASE)
+        parts = re.findall(r"[A-Za-z0-9]+", sanitized_name)
         class_name = "".join(part[:1].upper() + part[1:] for part in parts) or "Application"
         if class_name[0].isdigit():
             class_name = f"App{class_name}"
