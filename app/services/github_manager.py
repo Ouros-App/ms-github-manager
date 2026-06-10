@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -104,6 +105,10 @@ class GitHubRepositoryManager:
             await self._step(creation_id, "Configurando SonarCloud")
             await asyncio.to_thread(self._put_sonar_secret_sync, repo.name)
 
+            if payload.language == "springboot":
+                await self._step(creation_id, "Aplicando estrutura Spring REST")
+                await asyncio.to_thread(self._put_springboot_scaffold_sync, repo.name)
+
             if self._gitignore_template(payload.language) is None:
                 await self._step(creation_id, "Criando .gitignore generico")
                 await asyncio.to_thread(
@@ -208,6 +213,166 @@ class GitHubRepositoryManager:
             self._workflow(language),
             "Configure CI/CD",
         )
+
+    def _put_springboot_scaffold_sync(self, repository_name: str) -> None:
+        package_name = self._springboot_package_name(repository_name)
+        package_path = package_name.replace(".", "/")
+        application_class_name = self._springboot_application_class_name(repository_name)
+        files = {
+            "README.md": (
+                f"# {repository_name}\n\n"
+                "Projeto inicial Spring REST API com Gradle.\n\n"
+                "## Comandos\n\n"
+                "```bash\n"
+                "./gradlew clean build\n"
+                "./gradlew bootRun\n"
+                "```\n"
+            ),
+            "build.gradle": self._springboot_build_gradle(),
+            "settings.gradle": self._springboot_settings_gradle(repository_name),
+            f"src/main/java/{package_path}/{application_class_name}.java": self._springboot_application_java(
+                package_name,
+                application_class_name,
+            ),
+            f"src/main/java/{package_path}/controller/HomeController.java": self._springboot_home_controller_java(
+                package_name
+            ),
+            f"src/main/java/{package_path}/controller/HealthController.java": self._springboot_health_controller_java(
+                package_name
+            ),
+            "src/main/resources/application.properties": self._springboot_application_properties(),
+            f"src/test/java/{package_path}/{application_class_name}Tests.java": self._springboot_application_tests_java(
+                package_name,
+                application_class_name,
+            ),
+        }
+        for path, content in files.items():
+            self._put_file_sync(
+                repository_name,
+                path,
+                content,
+                f"Add Spring REST scaffold: {Path(path).name}",
+            )
+
+    def _springboot_build_gradle(self) -> str:
+        return """plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.4.0'
+    id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.ourosapp'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+}
+"""
+
+    def _springboot_settings_gradle(self, repository_name: str) -> str:
+        return f"rootProject.name = '{repository_name}'\n"
+
+    def _springboot_application_java(self, package_name: str, class_name: str) -> str:
+        return """package PACKAGE_NAME;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class CLASS_NAME {
+
+    public static void main(String[] args) {
+        SpringApplication.run(CLASS_NAME.class, args);
+    }
+}
+""".replace("PACKAGE_NAME", package_name).replace("CLASS_NAME", class_name)
+
+    def _springboot_home_controller_java(self, package_name: str) -> str:
+        return """package PACKAGE_NAME.controller;
+
+import java.util.Map;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class HomeController {
+
+    @GetMapping("/")
+    public Map<String, String> home() {
+        return Map.of(
+            "message",
+            "Spring REST API com Gradle pronta para evoluir."
+        );
+    }
+}
+""".replace("PACKAGE_NAME", package_name)
+
+    def _springboot_health_controller_java(self, package_name: str) -> str:
+        return """package PACKAGE_NAME.controller;
+
+import java.util.Map;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class HealthController {
+
+    @GetMapping("/health")
+    public Map<String, String> health() {
+        return Map.of("status", "ok");
+    }
+}
+""".replace("PACKAGE_NAME", package_name)
+
+    def _springboot_application_properties(self) -> str:
+        return """spring.application.name=${APP_NAME:app}
+server.port=${SERVER_PORT:8080}
+"""
+
+    def _springboot_application_tests_java(self, package_name: str, class_name: str) -> str:
+        return """package PACKAGE_NAME;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class CLASS_NAMETests {
+
+    @Test
+    void contextLoads() {
+    }
+}
+""".replace("PACKAGE_NAME", package_name).replace("CLASS_NAME", class_name)
+
+    def _springboot_package_name(self, repository_name: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "", repository_name.lower())
+        if not normalized:
+            normalized = "app"
+        if normalized[0].isdigit():
+            normalized = f"app{normalized}"
+        return f"com.ourosapp.{normalized}"
+
+    def _springboot_application_class_name(self, repository_name: str) -> str:
+        parts = re.findall(r"[A-Za-z0-9]+", repository_name)
+        class_name = "".join(part[:1].upper() + part[1:] for part in parts) or "Application"
+        if class_name[0].isdigit():
+            class_name = f"App{class_name}"
+        return f"{class_name}Application"
 
     def _put_sonar_secret_sync(self, repository_name: str) -> None:
         if not settings.SONAR_CLOUD_TOKEN:

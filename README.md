@@ -9,7 +9,7 @@ O servico usa `GH_TOKEN` ou `GITHUB_TOKEN` definido no `.env` para autenticar na
 - Lista repositorios de template da organizacao cujo nome termina em `-template`.
 - Cria repositorio no modo cru com README, licenca MIT e `.gitignore` por linguagem quando disponivel.
 - Cria repositorio a partir de um template existente na mesma organizacao.
-- Aplica workflow de CI/CD com build, testes e SonarCloud para React + TypeScript + Vite, Java Spring Boot e Python FastAPI.
+- Aplica workflow de CI/CD com build, testes e SonarCloud para React + TypeScript + Vite, Java Spring REST com Gradle e Python FastAPI.
 - Aplica protecao na branch `main`, exigindo pull request, uma aprovacao, status checks `ci`, `conventional-commits` e `sonarcloud`, historico linear e conversas resolvidas.
 - Expoe Swagger UI em `/docs`, ReDoc em `/redoc` e OpenAPI JSON em `/openapi.json`.
 - Expoe status de criacao por `creation_id`.
@@ -79,7 +79,7 @@ Valores aceitos para `visibility`: `private`, `public`, `internal`.
 
 Valores aceitos para `language`: `frontend`, `springboot`, `fastapi`.
 
-O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. Backends sobem PostgreSQL, MongoDB e Redis no job de CI para testes de integracao. O SonarCloud roda em um job separado chamado `sonarcloud` e usa `SONAR_TOKEN` como secret do repositorio.
+O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. O template Spring gera um esqueleto REST com `build.gradle`, `settings.gradle`, controllers, teste basico e pacote Java derivado do nome do repositorio, como `com.ourosapp.ordersapi` para um repo `orders-api`. O SonarCloud roda em um job separado chamado `sonarcloud` e usa `SONAR_TOKEN` como secret do repositorio. O deploy nao faz parte desse workflow: releases podem disparar outra pipeline separada.
 Os templates usados ficam em `app/templates/workflows`.
 
 ### Criar repositorio a partir de template

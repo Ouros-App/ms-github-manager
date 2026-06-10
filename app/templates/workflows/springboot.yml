@@ -45,41 +45,6 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: app_test
-          POSTGRES_USER: app
-          POSTGRES_PASSWORD: app
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U app -d app_test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/app_test
-      SPRING_DATASOURCE_USERNAME: app
-      SPRING_DATASOURCE_PASSWORD: app
-      SPRING_DATA_MONGODB_URI: mongodb://localhost:27017/app_test
-      SPRING_DATA_REDIS_HOST: localhost
-      SPRING_DATA_REDIS_PORT: 6379
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -90,32 +55,19 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Build and test with Maven
-        env:
-          GITHUB_RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          if [ "$GITHUB_RUN_NUMBER" = "1" ]; then
-            if [ -f mvnw ]; then chmod +x mvnw && ./mvnw -B package -DskipTests; elif [ -f pom.xml ]; then mvn -B package -DskipTests; fi
-          elif [ -f mvnw ]; then
-            chmod +x mvnw && ./mvnw -B verify
-          elif [ -f pom.xml ]; then
-            mvn -B verify
-          fi
-
       - name: Set up Gradle
         if: ${{ hashFiles('build.gradle', 'build.gradle.kts') != '' }}
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build and test with Gradle
-        env:
-          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          if [ "$GITHUB_RUN_NUMBER" = "1" ]; then
-            if [ -f gradlew ]; then chmod +x gradlew && ./gradlew clean build -x test; elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then gradle clean build -x test; fi
-          elif [ -f gradlew ]; then
-            chmod +x gradlew && ./gradlew clean build
+          if [ -f gradlew ]; then
+            chmod +x gradlew && ./gradlew clean build --no-daemon
           elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then
-            gradle clean build
+            gradle clean build --no-daemon
+          else
+            echo "No Gradle build file found."
+            exit 1
           fi
 
   sonarcloud:
@@ -140,7 +92,7 @@ jobs:
             echo "sonar.organization=${SONAR_ORGANIZATION:-$owner}"
             echo "sonar.projectKey=${SONAR_PROJECT_KEY:-${owner}_${repo}}"
             echo "sonar.sources=."
-            echo "sonar.exclusions=.git/**,.github/**,target/**,build/**,.gradle/**"
+            echo "sonar.exclusions=.git/**,.github/**,build/**,.gradle/**"
             if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
               echo "sonar.branch.name=main"
             fi
@@ -173,4 +125,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy
-        run: echo "Configure o deploy deste repositorio."
+        run: echo "Configure o deploy deste projeto Spring MVC."

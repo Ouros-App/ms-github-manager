@@ -123,17 +123,3 @@ jobs:
           curl -sS -u "${SONAR_TOKEN}:" -X POST "https://sonarcloud.io/api/projects/update_visibility" \
             -d "project=${project_key}" \
             -d "visibility=public"
-
-  deploy:
-    name: deploy
-    runs-on: ubuntu-latest
-    needs:
-      - ci
-      - sonarcloud
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Deploy
-        run: echo "Configure o deploy deste repositorio."
