@@ -112,7 +112,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
           # SONAR_PROJECT_KEY não é necessário - será gerado automaticamente!
-        run: ./gradlew sonar --no-daemon --info
+        run: ./gradlew sonar --no-daemon --info -Dsonar.projectVisibility=public
+
 
   deploy:
     name: deploy
