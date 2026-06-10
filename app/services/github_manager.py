@@ -165,6 +165,13 @@ class GitHubRepositoryManager:
                 f"com sufixo '{settings.TEMPLATE_SUFFIX}'."
             )
 
+        repo = await asyncio.to_thread(self._repo, template_name)
+        if not self._is_template_repository(repo):
+            raise ValueError(
+                f"Repositorio '{settings.GITHUB_ORG_LOGIN}/{template_name}' existe, "
+                "mas nao esta marcado como template no GitHub."
+            )
+
     def _list_templates_sync(self):
         return list(self._org().get_repos(type="all"))
 
@@ -204,6 +211,13 @@ class GitHubRepositoryManager:
                 raise GitHubManagerError("Resposta invalida ao gerar repositorio por template.")
             return self._client.get_repo(f"{settings.GITHUB_ORG_LOGIN}/{payload.name}")
         except GithubException as exc:
+            if getattr(exc, "status", None) == 404:
+                raise GitHubManagerError(
+                    f"GitHub retornou 404 ao gerar o repositorio a partir de "
+                    f"'{settings.GITHUB_ORG_LOGIN}/{payload.template_name}'. "
+                    "Verifique se o template existe, se esta marcado como template "
+                    "e se o token tem acesso ao repositorio."
+                ) from exc
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
     def _put_workflow_sync(self, repository_name: str, language: str) -> None:
@@ -541,6 +555,17 @@ temp/
             return self._client.get_repo(f"{settings.GITHUB_ORG_LOGIN}/{repository_name}")
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _is_template_repository(self, repo) -> bool:
+        raw_data = getattr(repo, "raw_data", None)
+        if isinstance(raw_data, dict) and "is_template" in raw_data:
+            return bool(raw_data["is_template"])
+
+        value = getattr(repo, "is_template", None)
+        if value is not None:
+            return bool(value)
+
+        return False
 
     def _format_github_error(self, exc: GithubException) -> str:
         data = exc.data if isinstance(exc.data, dict) else {}

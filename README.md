@@ -99,6 +99,8 @@ POST /repositories/from-template
 
 O workflow de CI/CD e escolhido pelo nome do template quando ele contem `frontend`, `react`, `vite`, `typescript`, `spring`, `java` ou `fastapi`. Outros templates recebem um workflow generico.
 
+O repositorio escolhido em `template_name` precisa estar marcado como template no GitHub. Se o nome existir mas o repo nao estiver habilitado como template, a API do GitHub pode responder com `404 Not Found`.
+
 ### Consultar status de criacao
 
 ```http
