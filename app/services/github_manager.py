@@ -281,7 +281,9 @@ class GitHubRepositoryManager:
     def _clear_springboot_template_structure_sync(self, repository_name: str) -> None:
         for path in (
             "src/main/java",
+            "src/main/kotlin",
             "src/test/java",
+            "src/test/kotlin",
             "src/main/resources/application.properties",
             "src/main/resources/application-local.properties",
         ):
@@ -290,8 +292,10 @@ class GitHubRepositoryManager:
     def _springboot_build_gradle(self) -> str:
         return """plugins {
     id 'java'
+    id 'jacoco'
     id 'org.springframework.boot' version '3.4.0'
     id 'io.spring.dependency-management' version '1.1.6'
+    id 'org.sonarqube' version '6.2.0.5505'
 }
 
 group = 'com.ourosapp'
@@ -308,6 +312,14 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+        xml.required = true
+        html.required = true
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
