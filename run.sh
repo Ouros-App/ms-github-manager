@@ -1,61 +1,128 @@
 #!/bin/bash
-# run.sh --reboot NUMERO
-
-if [ "$1" != "--reboot" ] || [ -z "$2" ]; then
-    echo "Uso: $0 --reboot NUMERO"
-    exit 1
-fi
-
-source .env
-NOME="${APP_NAME}_$2"
-PORTA=$((RANDOM % 9000 + 1000))
-
-echo "🔄 REBOOT $NOME na porta $PORTA"
+# run.sh [--reboot NUMERO]
 
 # ==========================================
-# 1. Remove container antigo (inclusive travado)
+# Funções auxiliares
 # ==========================================
-echo "Removendo container antigo..."
-if ! sudo docker rm -f "$NOME" 2>/dev/null; then
-    # Falhou: tenta matar o processo manualmente
-    PID=$(sudo docker inspect --format='{{.State.Pid}}' "$NOME" 2>/dev/null)
-    if [ -n "$PID" ] && [ "$PID" != "0" ]; then
-        echo "Container travado. Matando processo $PID..."
-        sudo kill -9 "$PID"
-        sleep 1
-        sudo docker rm -f "$NOME"
-    else
-        echo "Não foi possível remover. Execute manualmente:"
-        echo "  sudo kill -9 \$(sudo docker inspect --format='{{.State.Pid}}' $NOME)"
-        echo "  sudo docker rm -f $NOME"
+source_env() {
+    if [ ! -f .env ]; then
+        echo "❌ Arquivo .env não encontrado"
         exit 1
     fi
-fi
+    source .env
+    if [ -z "$APP_NAME" ]; then
+        echo "❌ APP_NAME não definido no .env"
+        exit 1
+    fi
+}
 
-# Remove imagem antiga
-sudo docker rmi -f "$NOME" 2>/dev/null
+proxima_porta_livre() {
+    local porta=$((RANDOM % 9000 + 1000))
+    while lsof -i :$porta &>/dev/null 2>&1; do
+        porta=$((RANDOM % 9000 + 1000))
+    done
+    echo $porta
+}
+
+proximo_numero() {
+    local num=1
+    while docker ps -a --format '{{.Names}}' | grep -q "^${APP_NAME}_${num}$"; do
+        num=$((num + 1))
+    done
+    echo $num
+}
+
+remove_container() {
+    local nome=$1
+    sudo docker rm -f "$nome" 2>/dev/null && return 0
+    # Se falhou, tenta matar o processo manualmente
+    local pid=$(sudo docker inspect --format='{{.State.Pid}}' "$nome" 2>/dev/null)
+    if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+        echo "Container travado. Matando processo $pid..."
+        sudo kill -9 "$pid" 2>/dev/null
+        sleep 1
+        sudo docker rm -f "$nome" 2>/dev/null
+    fi
+}
 
 # ==========================================
-# 2. Build silencioso da nova imagem
+# Modo NOVO (primeira execução)
 # ==========================================
-echo "🏗️ Build da imagem..."
-sudo docker build --no-cache --pull -t "$NOME" . > /tmp/build.log 2>&1
-if [ $? -ne 0 ]; then
-    echo "❌ Build falhou. Últimas linhas do log:"
-    tail -20 /tmp/build.log
-    exit 1
-fi
+modo_novo() {
+    source_env
+    local numero=$(proximo_numero)
+    local nome="${APP_NAME}_${numero}"
+    local porta=$(proxima_porta_livre)
+
+    echo "🚀 NOVO CONTAINER: $nome na porta $porta"
+
+    echo "🏗️ Build da imagem..."
+    sudo docker build --no-cache --pull -t "$nome" . > /tmp/build.log 2>&1
+    if [ $? -ne 0 ]; then
+        echo "❌ Build falhou. Últimas linhas:"
+        tail -20 /tmp/build.log
+        exit 1
+    fi
+
+    echo "🐳 Subindo container..."
+    sudo docker run -d -p "$porta":8000 --name "$nome" --env-file .env "$nome" || {
+        echo "❌ Falha ao subir container"
+        exit 1
+    }
+
+    echo "✅ RODANDO: http://localhost:$porta"
+}
 
 # ==========================================
-# 3. Sobe o novo container
+# Modo REBOOT (container já existe)
 # ==========================================
-echo "🐳 Subindo container..."
-sudo docker run -d -p "$PORTA":8000 --name "$NOME" --env-file .env "$NOME"
+modo_reboot() {
+    local numero=$1
+    source_env
+    local nome="${APP_NAME}_${numero}"
+    local porta=$(proxima_porta_livre)
 
-if [ $? -eq 0 ]; then
-    echo "✅ RODANDO: http://localhost:$PORTA"
-else
-    echo "❌ Falha ao subir. Logs:"
-    sudo docker logs "$NOME" --tail=30
-    exit 1
-fi
+    echo "🔄 REBOOT $nome na porta $porta"
+
+    # Remove container antigo (travado ou não)
+    echo "Removendo container antigo..."
+    remove_container "$nome"
+    sudo docker rmi -f "$nome" 2>/dev/null
+
+    echo "🏗️ Build da imagem..."
+    sudo docker build --no-cache --pull -t "$nome" . > /tmp/build.log 2>&1
+    if [ $? -ne 0 ]; then
+        echo "❌ Build falhou. Últimas linhas:"
+        tail -20 /tmp/build.log
+        exit 1
+    fi
+
+    echo "🐳 Subindo container..."
+    sudo docker run -d -p "$porta":8000 --name "$nome" --env-file .env "$nome" || {
+        echo "❌ Falha ao subir container"
+        exit 1
+    }
+
+    echo "✅ RODANDO: http://localhost:$porta"
+}
+
+# ==========================================
+# MAIN
+# ==========================================
+case "$1" in
+    --reboot)
+        if [[ -z "$2" || ! "$2" =~ ^[0-9]+$ ]]; then
+            echo "❌ Uso: $0 --reboot NUMERO"
+            exit 1
+        fi
+        modo_reboot "$2"
+        ;;
+    "")
+        modo_novo
+        ;;
+    *)
+        echo "Uso: $0            # primeiro container"
+        echo "      $0 --reboot N # reinicia container N"
+        exit 1
+        ;;
+esac
