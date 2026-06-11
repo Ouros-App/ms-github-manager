@@ -102,6 +102,7 @@ class RepositoryCreationStatusResponse(BaseModel):
     mode: Literal["bare", "template"]
     started_at: datetime
     finished_at: datetime | None = None
+    current_step: str | None = None
     steps: list[str] = Field(default_factory=list)
     error: str | None = None
     url: str | None = None
@@ -115,6 +116,7 @@ class RepositoryCreationStatusResponse(BaseModel):
                 "mode": "bare",
                 "started_at": "2026-06-08T10:00:00Z",
                 "finished_at": None,
+                "current_step": "Aplicando CI/CD",
                 "steps": ["Criando repositorio cru", "Aplicando CI/CD"],
                 "error": None,
                 "url": None,

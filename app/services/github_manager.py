@@ -153,6 +153,8 @@ class GitHubRepositoryManager:
                 )
                 await self._step(creation_id, "Limpando estrutura Spring do template")
                 await asyncio.to_thread(self._clear_springboot_template_structure_sync, repo.name)
+                await self._step(creation_id, "Aguardando remocao da estrutura Spring antiga")
+                await asyncio.to_thread(self._wait_until_paths_absent_sync, repo.name, ["src/main/java", "src/test/java"])
                 await self._step(creation_id, "Aplicando estrutura Spring REST")
                 await asyncio.to_thread(self._put_springboot_scaffold_sync, repo.name)
 
@@ -463,12 +465,15 @@ class CLASS_NAMETests {
                 branch=settings.DEFAULT_BRANCH,
             )
         except UnknownObjectException:
-            repo.create_file(
-                path=path,
-                message=message,
-                content=content,
-                branch=settings.DEFAULT_BRANCH,
-            )
+            try:
+                repo.create_file(
+                    path=path,
+                    message=message,
+                    content=content,
+                    branch=settings.DEFAULT_BRANCH,
+                )
+            except GithubException as exc:
+                raise GitHubManagerError(self._format_github_error(exc)) from exc
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
@@ -560,6 +565,32 @@ class CLASS_NAMETests {
             f"{missing_display}"
         )
 
+    def _wait_until_paths_absent_sync(self, repository_name: str, paths: list[str]) -> None:
+        deadline = time.monotonic() + settings.GH_TIMEOUT_SECONDS
+        repo = self._repo(repository_name)
+
+        while time.monotonic() < deadline:
+            remaining: list[str] = []
+            for path in paths:
+                try:
+                    repo.get_contents(path, ref=settings.DEFAULT_BRANCH)
+                    remaining.append(path)
+                except UnknownObjectException:
+                    continue
+                except GithubException as exc:
+                    raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+            if not remaining:
+                return
+
+            time.sleep(self._REPOSITORY_READY_INTERVAL_SECONDS)
+
+        remaining_display = ", ".join(paths)
+        raise GitHubManagerError(
+            f"Estrutura antiga do template ainda existe em '{settings.GITHUB_ORG_LOGIN}/{repository_name}': "
+            f"{remaining_display}"
+        )
+
     async def _mark_running(self, creation_id: str) -> None:
         async with self._lock:
             self._creations[creation_id].status = "running"
@@ -590,6 +621,7 @@ class CLASS_NAMETests {
             mode=state.mode,
             started_at=state.started_at,
             finished_at=state.finished_at,
+            current_step=state.steps[-1] if state.steps else None,
             steps=state.steps,
             error=state.error,
             url=state.url,
