@@ -145,6 +145,8 @@ class GitHubRepositoryManager:
             await asyncio.to_thread(self._put_sonar_secret_sync, repo.name)
 
             if self._template_language(payload.template_name) == "springboot":
+                await self._step(creation_id, "Limpando estrutura Spring do template")
+                await asyncio.to_thread(self._clear_springboot_template_structure_sync, repo.name)
                 await self._step(creation_id, "Aplicando estrutura Spring REST")
                 await asyncio.to_thread(self._put_springboot_scaffold_sync, repo.name)
 
@@ -233,6 +235,7 @@ class GitHubRepositoryManager:
         )
 
     def _put_springboot_scaffold_sync(self, repository_name: str) -> None:
+        application_name = self._springboot_application_name(repository_name)
         package_name = self._springboot_package_name(repository_name)
         package_path = package_name.replace(".", "/")
         application_class_name = self._springboot_application_class_name(repository_name)
@@ -258,7 +261,10 @@ class GitHubRepositoryManager:
             f"src/main/java/{package_path}/controller/HealthController.java": self._springboot_health_controller_java(
                 package_name
             ),
-            "src/main/resources/application.properties": self._springboot_application_properties(),
+            "src/main/resources/application.properties": self._springboot_application_properties(application_name),
+            "src/main/resources/application-local.properties": self._springboot_application_local_properties(
+                application_name
+            ),
             f"src/test/java/{package_path}/{application_class_name}Tests.java": self._springboot_application_tests_java(
                 package_name,
                 application_class_name,
@@ -271,6 +277,15 @@ class GitHubRepositoryManager:
                 content,
                 f"Add Spring REST scaffold: {Path(path).name}",
             )
+
+    def _clear_springboot_template_structure_sync(self, repository_name: str) -> None:
+        for path in (
+            "src/main/java",
+            "src/test/java",
+            "src/main/resources/application.properties",
+            "src/main/resources/application-local.properties",
+        ):
+            self._delete_path_sync(repository_name, path)
 
     def _springboot_build_gradle(self) -> str:
         return """plugins {
@@ -357,9 +372,14 @@ public class HealthController {
 }
 """.replace("PACKAGE_NAME", package_name)
 
-    def _springboot_application_properties(self) -> str:
-        return """spring.application.name=${APP_NAME:app}
+    def _springboot_application_properties(self, application_name: str) -> str:
+        return f"""spring.application.name={application_name}
 server.port=${SERVER_PORT:8080}
+"""
+
+    def _springboot_application_local_properties(self, application_name: str) -> str:
+        return f"""spring.application.name={application_name}
+server.port=${{SERVER_PORT:8080}}
 """
 
     def _springboot_application_tests_java(self, package_name: str, class_name: str) -> str:
@@ -378,7 +398,7 @@ class CLASS_NAMETests {
 """.replace("PACKAGE_NAME", package_name).replace("CLASS_NAME", class_name)
 
     def _springboot_package_name(self, repository_name: str) -> str:
-        normalized = re.sub(r"^ms[-_.]?", "", repository_name.lower())
+        normalized = self._springboot_application_name(repository_name)
         normalized = re.sub(r"[^a-z0-9]+", "", normalized)
         if not normalized:
             normalized = "app"
@@ -386,8 +406,15 @@ class CLASS_NAMETests {
             normalized = f"app{normalized}"
         return f"com.ourosapp.{normalized}"
 
+    def _springboot_application_name(self, repository_name: str) -> str:
+        normalized = re.sub(r"^ms[-_.]?", "", repository_name.lower())
+        normalized = re.sub(r"[-_.]?template$", "", normalized)
+        normalized = re.sub(r"[^a-z0-9-]+", "-", normalized)
+        normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
+        return normalized or "app"
+
     def _springboot_application_class_name(self, repository_name: str) -> str:
-        sanitized_name = re.sub(r"^ms[-_.]?", "", repository_name, flags=re.IGNORECASE)
+        sanitized_name = self._springboot_application_name(repository_name)
         parts = re.findall(r"[A-Za-z0-9]+", sanitized_name)
         class_name = "".join(part[:1].upper() + part[1:] for part in parts) or "Application"
         if class_name[0].isdigit():
@@ -425,6 +452,30 @@ class CLASS_NAMETests {
                 path=path,
                 message=message,
                 content=content,
+                branch=settings.DEFAULT_BRANCH,
+            )
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _delete_path_sync(self, repository_name: str, path: str) -> None:
+        repo = self._repo(repository_name)
+        try:
+            item = repo.get_contents(path, ref=settings.DEFAULT_BRANCH)
+        except UnknownObjectException:
+            return
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+        if isinstance(item, list):
+            for child in item:
+                self._delete_path_sync(repository_name, child.path)
+            return
+
+        try:
+            repo.delete_file(
+                path=item.path,
+                message=f"Remove template scaffold: {item.path}",
+                sha=item.sha,
                 branch=settings.DEFAULT_BRANCH,
             )
         except GithubException as exc:
