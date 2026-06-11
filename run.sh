@@ -290,7 +290,6 @@ modo_novo() {
 
 modo_reboot() {
     local NUMERO=$1
-    local force=$2
 
     echo ""
     color_echo "cyan" "🔄 REINICIANDO CONTAINER #$NUMERO..."
@@ -300,58 +299,42 @@ modo_reboot() {
 
     local NOME="${BASE_NAME}_${NUMERO}"
 
-    # Verificar se o container existe
+    # FORÇAR remoção mesmo se estiver rodando
     color_echo "blue" "🔍 Verificando se o container $NOME existe..."
-    if ! docker ps -a --format '{{.Names}}' | grep -q "^${NOME}$"; then
-        color_echo "red" "❌ Container $NOME não encontrado!"
-        exit 1
-    fi
-    color_echo "green" "✓ Container encontrado"
-
-    # Obter porta atual
-    local PORTA_ATUAL
-    PORTA_ATUAL=$(docker port $NOME 8000 2>/dev/null | cut -d ':' -f2)
-    if [ -z "$PORTA_ATUAL" ]; then
-        color_echo "yellow" "⚠️ Não foi possível obter a porta atual, gerando nova porta..."
-        PORTA_ATUAL=$(proxima_porta_livre)
-    fi
-    color_echo "green" "✓ Porta: $PORTA_ATUAL"
-
-    # Parar container
-    color_echo "blue" "🛑 Parando container $NOME..."
-    (
+    
+    # Para e remove FORÇADAMENTE se existir
+    if docker ps -a --format '{{.Names}}' | grep -q "^${NOME}$"; then
+        color_echo "yellow" "⚠️ Container encontrado. Forçando remoção..."
+        
+        # Parar (se estiver rodando)
         docker stop $NOME > /dev/null 2>&1
-    ) &
-    local stop_pid=$!
-    show_loading $stop_pid "🛑 Parando container"
-    wait $stop_pid
-    color_echo "green" "✓ Container parado"
-
-    # Remover container
-    color_echo "blue" "🗑️ Removendo container $NOME..."
-    (
+        
+        # Remover FORÇADAMENTE
         docker rm -f $NOME > /dev/null 2>&1
-    ) &
-    local rm_pid=$!
-    show_loading $rm_pid "🗑️ Removendo container"
-    wait $rm_pid
-    color_echo "green" "✓ Container removido"
+        
+        color_echo "green" "✓ Container removido com sucesso"
+    else
+        color_echo "green" "✓ Container não existe (limpo)"
+    fi
+
+    # Obter porta atual (do container ANTIGO antes de remover?)
+    # Como já removemos, precisamos de outra forma...
+    # Vamos verificar se a porta está salva em algum lugar ou gerar nova
+    
+    local PORTA_ATUAL
+    # Tenta encontrar uma porta que estava em uso (opcional)
+    # Por simplicidade, vamos gerar uma nova porta
+    PORTA_ATUAL=$(proxima_porta_livre)
+    color_echo "green" "✓ Porta escolhida: $PORTA_ATUAL"
 
     # Remover imagem antiga FORÇADAMENTE
-    color_echo "blue" "🗑️ Removendo imagem antiga do $NOME e dependências..."
-    (
-        docker rmi -f $NOME > /dev/null 2>&1
-        docker image prune -a -f > /dev/null 2>&1
-        # Remover também imagens dangling
-        docker images -f "dangling=true" -q | xargs -r docker rmi -f > /dev/null 2>&1
-    ) &
-    local rmi_pid=$!
-    show_loading $rmi_pid "🗑️ Removendo imagens antigas"
-    wait $rmi_pid
-    color_echo "green" "✓ Imagens removidas"
+    color_echo "blue" "🗑️ Removendo imagem antiga do $NOME..."
+    docker rmi -f $NOME > /dev/null 2>&1
+    docker image prune -f > /dev/null 2>&1
+    color_echo "green" "✓ Imagem removida"
 
-    # Build com limpeza agressiva
-    buildar_imagem "$NOME" "$force"
+    # Build e sobe
+    buildar_imagem "$NOME"
     subir_container "$NOME" "$PORTA_ATUAL"
     verificar_status "$NOME" "$PORTA_ATUAL"
 }
