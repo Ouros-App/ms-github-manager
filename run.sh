@@ -31,14 +31,7 @@ carregar_env() {
         exit 1
     fi
 
-    while IFS='=' read -r key value; do
-        [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
-        value="${value%\"}"
-        value="${value#\"}"
-        value="${value%\'}"
-        value="${value#\'}"
-        export "$key=$value"
-    done < .env
+    source .env
 
     if [ -z "$APP_NAME" ]; then
         color_echo "red" "❌ APP_NAME não encontrado no .env"
@@ -57,95 +50,69 @@ proxima_porta_livre() {
     echo $porta
 }
 
-# Destruir container e imagem (SEM FRESCURA)
-destruir_tudo() {
-    local nome=$1
+# ─────────────────────────────────────────
+# MODO REBOOT (SIMPLES E FUNCIONAL)
+# ─────────────────────────────────────────
+modo_reboot() {
+    local numero=$1
     
+    echo ""
+    color_echo "cyan" "🔄 REBOOT DO CONTAINER #$numero"
+    echo ""
+    
+    carregar_env
+    
+    local nome="${APP_NAME}_${numero}"
+    local porta=$(proxima_porta_livre)
+    
+    color_echo "green" "✓ Nome: $nome"
+    color_echo "green" "✓ Porta: $porta"
+    
+    # 1. Matar container e imagem
     color_echo "yellow" "💣 Destruindo $nome..."
-    
-    # Para e remove container (ignora erros)
     docker stop "$nome" 2>/dev/null
     docker rm "$nome" 2>/dev/null
     docker rm -f "$nome" 2>/dev/null
-    
-    # Remove imagem
     docker rmi "$nome" 2>/dev/null
     docker rmi -f "$nome" 2>/dev/null
-    
     color_echo "green" "✓ Destruído"
-}
-
-# Build da imagem
-build_imagem() {
-    local nome=$1
     
+    # 2. Build da imagem
     color_echo "blue" "🏗️ Buildando $nome..."
-    
-    # Build sem cache
-    if docker build --no-cache --pull \
+    if ! docker build --no-cache --pull \
         --build-arg APP_NAME=$APP_NAME \
         --build-arg APP_PORT=${APP_PORT:-8000} \
         -t "$nome" .; then
-        color_echo "green" "✓ Build concluído"
-        return 0
-    else
         color_echo "red" "❌ Build falhou"
-        return 1
+        exit 1
     fi
-}
-
-# Subir container
-subir_container() {
-    local nome=$1
-    local porta=$2
+    color_echo "green" "✓ Build concluído"
     
+    # 3. Subir container (usando --env-file em vez de -e manual)
     color_echo "blue" "🐳 Subindo $nome na porta $porta..."
     
-    # Monta comando
-    local cmd="docker run -d -p ${porta}:8000 --name $nome"
-    
-    # Adiciona variáveis do .env
-    while IFS='=' read -r key value; do
-        [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
-        if [[ "$key" != "APP_NAME" && "$key" != "APP_PORT" ]]; then
-            value="${value%\"}"
-            value="${value#\"}"
-            value="${value%\'}"
-            value="${value#\'}"
-            cmd="$cmd -e $key=$value"
-        fi
-    done < .env
-    
-    cmd="$cmd $nome"
-    
-    # Executa
-    if eval "$cmd"; then
-        color_echo "green" "✓ Container iniciado"
-        return 0
-    else
-        color_echo "red" "❌ Falha ao iniciar"
-        return 1
+    if ! docker run -d \
+        -p ${porta}:8000 \
+        --name "$nome" \
+        --env-file .env \
+        "$nome"; then
+        color_echo "red" "❌ Falha ao iniciar container"
+        exit 1
     fi
-}
-
-# Verificar status
-verificar_status() {
-    local nome=$1
-    local porta=$2
     
+    # 4. Verificar status
     sleep 2
-    
-    if docker ps --format '{{.Names}}' | grep -q "^${nome}$"; then
+    if docker ps | grep -q "$nome"; then
         echo ""
-        color_echo "green" "✅ $nome está rodando!"
+        color_echo "green" "✅ $nome rodando na porta $porta"
         color_echo "cyan" "🌐 http://localhost:$porta"
         echo ""
-        return 0
+        color_echo "green" "✨ REBOOT CONCLUÍDO!"
     else
         color_echo "red" "❌ Container não está rodando"
         color_echo "yellow" "Logs:"
-        docker logs "$nome" --tail=20 2>/dev/null
-        return 1
+        docker logs "$nome" --tail=30
+        exit 1
     fi
 }
 
@@ -171,40 +138,39 @@ modo_novo() {
     color_echo "green" "✓ Nome: $nome"
     color_echo "green" "✓ Porta: $porta"
     
-    build_imagem "$nome" || exit 1
-    subir_container "$nome" "$porta" || exit 1
-    verificar_status "$nome" "$porta"
-}
-
-# ─────────────────────────────────────────
-# MODO REBOOT
-# ─────────────────────────────────────────
-modo_reboot() {
-    local numero=$1
+    # Build
+    color_echo "blue" "🏗️ Buildando $nome..."
+    if ! docker build --no-cache --pull \
+        --build-arg APP_NAME=$APP_NAME \
+        --build-arg APP_PORT=${APP_PORT:-8000} \
+        -t "$nome" .; then
+        color_echo "red" "❌ Build falhou"
+        exit 1
+    fi
+    color_echo "green" "✓ Build concluído"
     
-    echo ""
-    color_echo "cyan" "🔄 REBOOT DO CONTAINER #$numero"
-    echo ""
+    # Subir
+    color_echo "blue" "🐳 Subindo $nome na porta $porta..."
+    if ! docker run -d \
+        -p ${porta}:8000 \
+        --name "$nome" \
+        --env-file .env \
+        "$nome"; then
+        color_echo "red" "❌ Falha ao iniciar container"
+        exit 1
+    fi
     
-    carregar_env
-    
-    local nome="${APP_NAME}_${numero}"
-    local porta=$(proxima_porta_livre)
-    
-    color_echo "green" "✓ Nome: $nome"
-    color_echo "green" "✓ Porta: $porta"
-    
-    # 1. Destruir tudo
-    destruir_tudo "$nome"
-    
-    # 2. Build
-    build_imagem "$nome" || exit 1
-    
-    # 3. Subir
-    subir_container "$nome" "$porta" || exit 1
-    
-    # 4. Verificar
-    verificar_status "$nome" "$porta"
+    sleep 2
+    if docker ps | grep -q "$nome"; then
+        echo ""
+        color_echo "green" "✅ $nome rodando na porta $porta"
+        color_echo "cyan" "🌐 http://localhost:$porta"
+        echo ""
+    else
+        color_echo "red" "❌ Container não está rodando"
+        docker logs "$nome" --tail=30
+        exit 1
+    fi
 }
 
 # ─────────────────────────────────────────
