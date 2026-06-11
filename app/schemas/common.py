@@ -7,3 +7,7 @@ class MessageResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+    service: str
+    version: str
+    organization: str
+    default_branch: str

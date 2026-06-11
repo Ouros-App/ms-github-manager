@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
+from app.core.config import settings
 from app.schemas.common import HealthResponse, MessageResponse
 from app.schemas.github import (
     BareRepositoryCreateRequest,
@@ -30,7 +31,13 @@ async def read_root() -> MessageResponse:
     summary="Health check",
 )
 async def health_check() -> HealthResponse:
-    return HealthResponse(status="ok")
+    return HealthResponse(
+        status="ok",
+        service=settings.PROJECT_NAME,
+        version=settings.VERSION,
+        organization=settings.GITHUB_ORG_LOGIN,
+        default_branch=settings.DEFAULT_BRANCH,
+    )
 
 
 @router.get(
