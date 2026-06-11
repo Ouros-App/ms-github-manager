@@ -31,16 +31,18 @@ color_echo() {
 
 # Help
 show_help() {
-    echo "Uso: $0 [--reboot NUMERO]"
+    echo "Uso: $0 [--reboot NUMERO] [--force]"
     echo ""
     echo "Opções:"
     echo "  (sem argumentos)   Builda a imagem e sobe um novo container com número incremental"
     echo "  --reboot NUMERO    Para, remove e rebuilda o container com o número especificado"
+    echo "  --force            Força limpeza TOTAL do Docker (cuidado!)"
     echo "  -h, --help         Mostra esta ajuda"
     echo ""
     echo "Exemplos:"
     echo "  $0                 # Sobe novo container (ex: minha_app_1, minha_app_2, ...)"
     echo "  $0 --reboot 1      # Rebuilda do zero o container minha_app_1"
+    echo "  $0 --reboot 1 --force # Limpa TUDO e rebuilda"
 }
 
 # ─────────────────────────────────────────
@@ -84,33 +86,97 @@ proxima_porta_livre() {
     echo $porta
 }
 
+# NOVA função: limpeza agressiva
+limpeza_nuclear() {
+    local force=$1
+    
+    color_echo "yellow" "⚠️  ATENÇÃO: Limpeza profunda do Docker!"
+    
+    if [ "$force" = "--force" ]; then
+        color_echo "red" "💣 Modo FORCE ativado - limpando TUDO (containers parados, imagens não usadas, volumes órfãos)..."
+        (
+            docker system prune -a -f --volumes > /dev/null 2>&1
+            docker builder prune -a -f > /dev/null 2>&1
+            docker image prune -a -f > /dev/null 2>&1
+            docker volume prune -f > /dev/null 2>&1
+            docker network prune -f > /dev/null 2>&1
+        ) &
+        show_loading $! "💣 Limpeza nuclear em andamento"
+        wait $!
+        color_echo "green" "✓ Limpeza nuclear concluída"
+    else
+        # Limpeza padrão mais agressiva que a original
+        (
+            docker builder prune -a -f > /dev/null 2>&1
+            docker image prune -f > /dev/null 2>&1
+            docker volume prune -f > /dev/null 2>&1
+        ) &
+        show_loading $! "🧹 Limpeza profunda em andamento"
+        wait $!
+        color_echo "green" "✓ Cache e recursos órfãos limpos"
+    fi
+}
+
+# Função para verificar integridade do código no container
+verificar_codigo_container() {
+    local nome=$1
+    local arquivo_teste=$2  # Caminho para um arquivo específico dentro do container
+    
+    color_echo "blue" "🔍 Verificando se o código foi atualizado no container..."
+    
+    if [ -n "$arquivo_teste" ] && docker exec $nome test -f "$arquivo_teste" 2>/dev/null; then
+        local data_container=$(docker exec $nome stat -c %Y "$arquivo_teste" 2>/dev/null)
+        local data_host=$(stat -c %Y "$(basename $arquivo_teste)" 2>/dev/null)
+        
+        if [ -n "$data_container" ] && [ -n "$data_host" ]; then
+            if [ $data_container -ge $data_host ]; then
+                color_echo "green" "✓ Código parece atualizado (timestamp ok)"
+            else
+                color_echo "red" "⚠️ Código no container parece mais antigo que no host!"
+                color_echo "yellow" "   Container: $(date -d @$data_container)"
+                color_echo "yellow" "   Host: $(date -d @$data_host)"
+            fi
+        fi
+    else
+        color_echo "yellow" "⚠️ Não foi possível verificar o código automaticamente"
+    fi
+}
+
 buildar_imagem() {
     local nome=$1
-    color_echo "blue" "🧹 Limpando cache de build..."
+    local force=$2
+    
+    # Limpeza mais robusta
+    limpeza_nuclear "$force"
+    
+    # Forçar rebuild com cache-busting
+    local cache_buster=$(date +%s)
+    
+    color_echo "blue" "🏗️ Construindo imagem $nome (REBUILD FORÇADO)..."
+    color_echo "yellow" "   Cache buster: $cache_buster"
+    
     (
-        docker builder prune -f > /dev/null 2>&1
-    ) &
-    show_loading $! "🧹 Limpando cache"
-    wait $!
-    color_echo "green" "✓ Cache limpo"
-
-    color_echo "blue" "🏗️ Construindo imagem $nome (sem cache, do zero)..."
-    (
-        docker build --no-cache --pull \
+        docker build --no-cache --pull --force-rm \
+                     --build-arg BUILDKIT_PROGRESS=plain \
+                     --build-arg CACHE_BUST=$cache_buster \
                      --build-arg APP_NAME=$APP_NAME \
                      --build-arg APP_PORT=${APP_PORT:-8000} \
                      -t $nome . > /tmp/docker_build_${nome}.log 2>&1
     ) &
     local build_pid=$!
-    show_loading $build_pid "🏗️ Construindo imagem do zero (isso pode levar alguns minutos)"
+    show_loading $build_pid "🏗️ Construindo imagem do zero (sem cache)"
     wait $build_pid
 
     if [ $? -eq 0 ]; then
         color_echo "green" "✓ Imagem construída com sucesso"
+        
+        # Debug: listar camadas da imagem
+        color_echo "blue" "📊 Camadas da imagem (últimas 5):"
+        docker history $nome --no-trunc --human | head -6 | tail -5
     else
         color_echo "red" "❌ Falha na construção da imagem"
         color_echo "yellow" "📋 Últimas linhas do log de build:"
-        tail -10 /tmp/docker_build_${nome}.log
+        tail -20 /tmp/docker_build_${nome}.log
         rm -f /tmp/docker_build_${nome}.log
         exit 1
     fi
@@ -123,7 +189,11 @@ subir_container() {
 
     color_echo "blue" "🐳 Iniciando container $nome na porta $porta..."
 
+    # IMPORTANTE: NÃO montar volumes de código para não sobrescrever
     local args=("-d" "-p" "${porta}:8000" "--name" "$nome")
+    
+    # Se houver necessidade de volumes, apenas para dados, NÃO para código
+    # args+=("-v" "dados_persistentes:/data")  # Exemplo seguro
     
     while IFS='=' read -r key value; do
         [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
@@ -141,6 +211,9 @@ subir_container() {
     color_echo "yellow" "📝 Executando docker run com ${#args[@]} argumentos"
     
     docker run "${args[@]}"
+    
+    # Pequena pausa para o container inicializar
+    sleep 3
 }
 
 verificar_status() {
@@ -152,11 +225,17 @@ verificar_status() {
     color_echo "cyan" "🌐 Acesse: http://localhost:$porta"
     echo ""
 
-    # Aguardar 2s para o container estabilizar antes de verificar
-    sleep 2
-
     if docker ps --format '{{.Names}}' | grep -q "^${nome}$"; then
         color_echo "green" "✓ Container está ativo e funcionando"
+        
+        # Verificar código se tiver um arquivo de referência
+        # Altere para um arquivo específico do seu projeto
+        if docker exec $nome test -f /app/app.py 2>/dev/null; then
+            verificar_codigo_container "$nome" "/app/app.py"
+        elif docker exec $nome test -f /usr/src/app/main.py 2>/dev/null; then
+            verificar_codigo_container "$nome" "/usr/src/app/main.py"
+        fi
+        
         color_echo "blue" "📋 Variáveis de ambiente carregadas do .env:"
         while IFS='=' read -r key value; do
             [[ -z "$key" || "$key" =~ ^[[:space:]]*# || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
@@ -164,15 +243,15 @@ verificar_status() {
                 color_echo "yellow" "   - $key"
             fi
         done < .env
+        
+        echo ""
+        color_echo "green" "✨ Concluído com sucesso!"
     else
         color_echo "red" "❌ Container subiu mas caiu em seguida. Logs:"
         docker logs $nome --tail=30 2>&1
         color_echo "yellow" "⚠️ Verifique os logs acima para identificar o erro."
         exit 1
     fi
-
-    echo ""
-    color_echo "green" "✨ Concluído com sucesso!"
 }
 
 # ─────────────────────────────────────────
@@ -180,6 +259,8 @@ verificar_status() {
 # ─────────────────────────────────────────
 
 modo_novo() {
+    local force=$1
+    
     echo ""
     color_echo "cyan" "🚀 SUBINDO NOVO CONTAINER..."
     echo ""
@@ -198,7 +279,7 @@ modo_novo() {
     porta=$(proxima_porta_livre)
     color_echo "green" "✓ Porta disponível: $porta"
 
-    buildar_imagem "$nome"
+    buildar_imagem "$nome" "$force"
     subir_container "$nome" "$porta"
     verificar_status "$nome" "$porta"
 }
@@ -209,6 +290,7 @@ modo_novo() {
 
 modo_reboot() {
     local NUMERO=$1
+    local force=$2
 
     echo ""
     color_echo "cyan" "🔄 REINICIANDO CONTAINER #$NUMERO..."
@@ -255,18 +337,21 @@ modo_reboot() {
     wait $rm_pid
     color_echo "green" "✓ Container removido"
 
-    # Remover imagem antiga
-    color_echo "blue" "🗑️ Removendo imagem antiga do $NOME..."
+    # Remover imagem antiga FORÇADAMENTE
+    color_echo "blue" "🗑️ Removendo imagem antiga do $NOME e dependências..."
     (
         docker rmi -f $NOME > /dev/null 2>&1
-        docker image prune -f > /dev/null 2>&1
+        docker image prune -a -f > /dev/null 2>&1
+        # Remover também imagens dangling
+        docker images -f "dangling=true" -q | xargs -r docker rmi -f > /dev/null 2>&1
     ) &
     local rmi_pid=$!
-    show_loading $rmi_pid "🗑️ Removendo imagem"
+    show_loading $rmi_pid "🗑️ Removendo imagens antigas"
     wait $rmi_pid
-    color_echo "green" "✓ Imagem removida"
+    color_echo "green" "✓ Imagens removidas"
 
-    buildar_imagem "$NOME"
+    # Build com limpeza agressiva
+    buildar_imagem "$NOME" "$force"
     subir_container "$NOME" "$PORTA_ATUAL"
     verificar_status "$NOME" "$PORTA_ATUAL"
 }
@@ -275,20 +360,37 @@ modo_reboot() {
 # Roteamento de argumentos
 # ─────────────────────────────────────────
 
-if [ $# -eq 0 ]; then
-    modo_novo
+FORCE_FLAG=""
+REBOOT_NUM=""
 
-elif [ $# -eq 2 ] && [ "$1" = "--reboot" ]; then
-    if ! [[ "$2" =~ ^[0-9]+$ ]]; then
-        color_echo "red" "❌ Número inválido: $2"
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --reboot)
+            REBOOT_NUM="$2"
+            shift 2
+            ;;
+        --force)
+            FORCE_FLAG="--force"
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+if [ -n "$REBOOT_NUM" ]; then
+    if ! [[ "$REBOOT_NUM" =~ ^[0-9]+$ ]]; then
+        color_echo "red" "❌ Número inválido: $REBOOT_NUM"
         exit 1
     fi
-    modo_reboot "$2"
-
-elif [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    show_help
-
+    modo_reboot "$REBOOT_NUM" "$FORCE_FLAG"
 else
-    show_help
-    exit 1
+    modo_novo "$FORCE_FLAG"
 fi
