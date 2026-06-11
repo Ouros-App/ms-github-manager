@@ -145,6 +145,12 @@ class GitHubRepositoryManager:
             await asyncio.to_thread(self._put_sonar_secret_sync, repo.name)
 
             if self._template_language(payload.template_name) == "springboot":
+                await self._step(creation_id, "Aguardando arquivos Spring do template")
+                await asyncio.to_thread(
+                    self._wait_until_paths_exist_sync,
+                    repo.name,
+                    ["build.gradle", "settings.gradle", "src/main/java", "src/test/java"],
+                )
                 await self._step(creation_id, "Limpando estrutura Spring do template")
                 await asyncio.to_thread(self._clear_springboot_template_structure_sync, repo.name)
                 await self._step(creation_id, "Aplicando estrutura Spring REST")
@@ -280,10 +286,7 @@ class GitHubRepositoryManager:
 
     def _clear_springboot_template_structure_sync(self, repository_name: str) -> None:
         for path in (
-            "src/main/java",
-            "src/main/kotlin",
-            "src/test/java",
-            "src/test/kotlin",
+            "src",
             "src/main/resources/application.properties",
             "src/main/resources/application-local.properties",
         ):
@@ -530,6 +533,31 @@ class CLASS_NAMETests {
 
         raise GitHubManagerError(
             f"Repositorio '{settings.GITHUB_ORG_LOGIN}/{repository_name}' nao ficou pronto: {last_error}"
+        )
+
+    def _wait_until_paths_exist_sync(self, repository_name: str, paths: list[str]) -> None:
+        deadline = time.monotonic() + settings.GH_TIMEOUT_SECONDS
+        repo = self._repo(repository_name)
+
+        while time.monotonic() < deadline:
+            missing: list[str] = []
+            for path in paths:
+                try:
+                    repo.get_contents(path, ref=settings.DEFAULT_BRANCH)
+                except UnknownObjectException:
+                    missing.append(path)
+                except GithubException as exc:
+                    raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+            if not missing:
+                return
+
+            time.sleep(self._REPOSITORY_READY_INTERVAL_SECONDS)
+
+        missing_display = ", ".join(paths)
+        raise GitHubManagerError(
+            f"Arquivos do template nao ficaram disponiveis em '{settings.GITHUB_ORG_LOGIN}/{repository_name}': "
+            f"{missing_display}"
         )
 
     async def _mark_running(self, creation_id: str) -> None:
