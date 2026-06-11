@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 RepositoryVisibility = Literal["private", "public", "internal"]
 RepositoryLanguage = Literal["frontend", "springboot", "fastapi"]
-CreationStatusValue = Literal["queued", "running", "succeeded", "failed"]
+CreationStatusValue = Literal["queued", "running", "done", "failed"]
 
 
 class TemplateResponse(BaseModel):

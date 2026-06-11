@@ -598,7 +598,7 @@ class CLASS_NAMETests {
     async def _mark_succeeded(self, creation_id: str, url: str) -> None:
         async with self._lock:
             state = self._creations[creation_id]
-            state.status = "succeeded"
+            state.status = "done"
             state.finished_at = datetime.now(timezone.utc)
             state.url = url
 

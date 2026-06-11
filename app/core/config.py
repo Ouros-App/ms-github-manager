@@ -12,7 +12,7 @@ class Settings:
         "PROJECT_DESCRIPTION",
         "API para criar e gerenciar repositorios da organizacao Ouros App no GitHub.",
     )
-    VERSION = "0.1.0"
+    VERSION = os.getenv("VERSION", "0.1.0")
     GITHUB_ORG_LOGIN = os.getenv("GITHUB_ORG_LOGIN", "Ouros-App")
     GH_TOKEN = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
     SONAR_CLOUD_TOKEN = os.getenv("SONAR_CLOUD_TOKEN") or os.getenv("sonar_cloud_token")
