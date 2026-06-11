@@ -391,7 +391,7 @@ public class HealthController {
 
     def _springboot_application_properties(self, application_name: str) -> str:
         return f"""spring.application.name={application_name}
-server.port=${SERVER_PORT:8080}
+server.port=${{SERVER_PORT:8080}}
 """
 
     def _springboot_application_local_properties(self, application_name: str) -> str:
