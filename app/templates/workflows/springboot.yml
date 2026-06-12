@@ -114,7 +114,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
           # SONAR_PROJECT_KEY não é necessário - será gerado automaticamente!
-        run: ./gradlew sonar --no-daemon --info -Dsonar.projectVisibility=public
+        run: ./gradlew sonar --no-daemon --info -Dsonar.projectVisibility=public -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
 
   codeql:
     name: codeql
@@ -131,8 +131,8 @@ jobs:
         with:
           languages: java-kotlin
 
-      - name: Autobuild for CodeQL
-        uses: github/codeql-action/autobuild@v3
+      - name: Build for CodeQL
+        run: ./gradlew build --no-daemon
 
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@v3
