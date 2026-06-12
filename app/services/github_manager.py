@@ -671,7 +671,10 @@ temp/
         workflow_path = self._WORKFLOW_DIR / f"{language}.yml"
         if not workflow_path.exists():
             workflow_path = self._WORKFLOW_DIR / "generic.yml"
-        return workflow_path.read_text(encoding="utf-8")
+        return workflow_path.read_text(encoding="utf-8").replace(
+            "__GITHUB_ORG_LOGIN__",
+            settings.GITHUB_ORG_LOGIN,
+        )
 
     def _org(self):
         try:

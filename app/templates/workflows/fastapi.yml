@@ -135,10 +135,11 @@ jobs:
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
           SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
         run: |
-          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          owner="${GITHUB_REPOSITORY_OWNER}"
+          owner_key="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           repo="${GITHUB_REPOSITORY#*/}"
           {
-            echo "sonar.organization=${SONAR_ORGANIZATION:-$owner}"
+            echo "sonar.organization=${SONAR_ORGANIZATION:-$owner_key}"
             echo "sonar.projectKey=${SONAR_PROJECT_KEY:-${owner}_${repo}}"
             echo "sonar.sources=."
             echo "sonar.exclusions=.git/**,.github/**,.venv/**,venv/**,__pycache__/**,dist/**,build/**"

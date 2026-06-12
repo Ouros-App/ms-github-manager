@@ -110,7 +110,7 @@ jobs:
 
       - name: Configure SonarCloud
         run: |
-          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          owner="__GITHUB_ORG_LOGIN__"
           repo="${GITHUB_REPOSITORY#*/}"
           echo "SONAR_PROJECT_KEY=${owner}_${repo}" >> "$GITHUB_ENV"
           echo "SONAR_PROJECT_NAME=${repo}" >> "$GITHUB_ENV"
@@ -120,7 +120,6 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
-          # SONAR_PROJECT_KEY não é necessário - será gerado automaticamente!
         run: ./gradlew sonar --no-daemon --info -Dsonar.projectVisibility=public -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} -Dsonar.projectKey=${SONAR_PROJECT_KEY} -Dsonar.projectName=${SONAR_PROJECT_NAME}
 
   codeql:
