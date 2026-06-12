@@ -84,6 +84,15 @@ jobs:
             fi
           } > sonar-project.properties
 
+      - name: Disable Automatic Analysis via API
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          project_key="$(grep '^sonar.projectKey=' sonar-project.properties | cut -d= -f2-)"
+          curl -sS -u "${SONAR_TOKEN}:" -X POST "https://sonarcloud.io/api/projects/update_default_analysis_configuration" \
+            -d "project=${project_key}" \
+            -d "autoScan=false"
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:
