@@ -328,7 +328,7 @@ tasks.named('jacocoTestReport') {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.release = 21
+    options.release = 17
 }
 """
 
