@@ -130,7 +130,7 @@ buildar_e_subir() {
     # Build sem cache
     color_echo "blue" "🔨 Construindo imagem do zero (sem cache)..."
     (
-        docker-compose -f $compose_file build --no-cache --pull > /tmp/docker_build_${numero}.log 2>&1
+        docker compose -f $compose_file build --no-cache --pull > /tmp/docker_build_${numero}.log 2>&1
     ) &
     local build_pid=$!
     show_loading $build_pid "🔨 Build da imagem do zero (isso pode levar alguns minutos)"
@@ -148,7 +148,7 @@ buildar_e_subir() {
     # Subir container
     color_echo "blue" "🐳 Iniciando container com docker-compose..."
     (
-        docker-compose -f $compose_file up -d > /tmp/docker_compose_${numero}.log 2>&1
+        docker compose -f $compose_file up -d > /tmp/docker_compose_${numero}.log 2>&1
     ) &
     local up_pid=$!
     show_loading $up_pid "🐳 Subindo container"
@@ -175,7 +175,7 @@ buildar_e_subir() {
     if docker ps --format '{{.Names}}' | grep -q "^${nome}$"; then
         color_echo "green" "✓ Container está ativo e funcionando"
         color_echo "blue" "📊 Status:"
-        docker-compose -f $compose_file ps
+        docker compose -f $compose_file ps
     else
         color_echo "red" "❌ Container subiu mas caiu em seguida. Logs:"
         docker logs $nome --tail=30 2>&1
@@ -255,7 +255,7 @@ modo_reboot() {
     # Parar e remover container + imagem
     color_echo "blue" "🛑 Parando e removendo instância $NUMERO..."
     (
-        docker-compose -f $COMPOSE_FILE down --rmi local --volumes --remove-orphans > /dev/null 2>&1
+        docker compose -f $COMPOSE_FILE down --rmi local --volumes --remove-orphans > /dev/null 2>&1
     ) &
     local down_pid=$!
     show_loading $down_pid "🛑 Parando e removendo tudo"
@@ -310,10 +310,10 @@ modo_bind() {
     export APP_NAME=$BASE_NAME
 
     color_echo "blue" "Parando instancia sem remover imagem..."
-    docker-compose -f $COMPOSE_FILE stop > /tmp/docker_bind_${NUMERO}.log 2>&1
+    docker compose -f $COMPOSE_FILE stop > /tmp/docker_bind_${NUMERO}.log 2>&1
 
     color_echo "blue" "Subindo instancia sem rebuild..."
-    docker-compose -f $COMPOSE_FILE up -d --no-build >> /tmp/docker_bind_${NUMERO}.log 2>&1
+    docker compose -f $COMPOSE_FILE up -d --no-build >> /tmp/docker_bind_${NUMERO}.log 2>&1
 
     if [ $? -ne 0 ]; then
         color_echo "red" "Falha ao subir instancia em modo bind"
