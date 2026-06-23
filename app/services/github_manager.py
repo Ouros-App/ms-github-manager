@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 import re
 import time
 import uuid
@@ -11,6 +13,12 @@ from github import Auth, Github
 from github.GithubException import GithubException, UnknownObjectException
 
 from app.core.config import settings
+
+DEBUG = os.getenv("DEBUG_GITHUB_MANAGER", "").lower() in ("1", "true", "yes")
+logger = logging.getLogger(__name__)
+if DEBUG:
+    logging.basicConfig(level=logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
 from app.schemas.github import (
     BareRepositoryCreateRequest,
     CreationStatusValue,
@@ -235,10 +243,17 @@ class GitHubRepositoryManager:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
     def _put_workflow_sync(self, repository_name: str, language: str) -> None:
+        workflow_content = self._workflow(language)
+        if DEBUG:
+            logger.debug(f"[_put_workflow_sync] repo={repository_name} language={language} workflow_path={self._WORKFLOW_DIR / f'{language}.yml'} exists={(self._WORKFLOW_DIR / f'{language}.yml').exists()} content_len={len(workflow_content)}")
+            if "Disable Automatic Analysis" in workflow_content:
+                logger.debug(f"[_put_workflow_sync] Workflow CONTAINS 'Disable Automatic Analysis' step")
+            else:
+                logger.debug(f"[_put_workflow_sync] Workflow MISSING 'Disable Automatic Analysis' step!")
         self._put_file_sync(
             repository_name,
             ".github/workflows/ci-cd.yml",
-            self._workflow(language),
+            workflow_content,
             "Configure CI/CD",
         )
 
@@ -455,8 +470,12 @@ class CLASS_NAMETests {
         message: str,
     ) -> None:
         repo = self._repo(repository_name)
+        if DEBUG:
+            logger.debug(f"[_put_file_sync] repo={repository_name} path={path} content_len={len(content)}")
         try:
             existing = repo.get_contents(path, ref=settings.DEFAULT_BRANCH)
+            if DEBUG:
+                logger.debug(f"[_put_file_sync] File EXISTS, updating... sha={existing.sha}")
             repo.update_file(
                 path=path,
                 message=message,
@@ -464,7 +483,11 @@ class CLASS_NAMETests {
                 sha=existing.sha,
                 branch=settings.DEFAULT_BRANCH,
             )
+            if DEBUG:
+                logger.debug(f"[_put_file_sync] File UPDATED successfully")
         except UnknownObjectException:
+            if DEBUG:
+                logger.debug(f"[_put_file_sync] File NOT FOUND, creating...")
             try:
                 repo.create_file(
                     path=path,
@@ -472,6 +495,8 @@ class CLASS_NAMETests {
                     content=content,
                     branch=settings.DEFAULT_BRANCH,
                 )
+                if DEBUG:
+                    logger.debug(f"[_put_file_sync] File CREATED successfully")
             except GithubException as exc:
                 raise GitHubManagerError(self._format_github_error(exc)) from exc
         except GithubException as exc:
@@ -637,17 +662,27 @@ class CLASS_NAMETests {
 
     def _template_language(self, template_name: str) -> str:
         normalized_name = template_name.lower()
+        if DEBUG:
+            logger.debug(f"[_template_language] template_name={template_name} normalized={normalized_name}")
         if (
             "frontend" in normalized_name
             or "react" in normalized_name
             or "vite" in normalized_name
             or "typescript" in normalized_name
         ):
+            if DEBUG:
+                logger.debug(f"[_template_language] detected: frontend")
             return "frontend"
         if "spring" in normalized_name or "java" in normalized_name:
+            if DEBUG:
+                logger.debug(f"[_template_language] detected: springboot")
             return "springboot"
         if "fastapi" in normalized_name:
+            if DEBUG:
+                logger.debug(f"[_template_language] detected: fastapi")
             return "fastapi"
+        if DEBUG:
+            logger.debug(f"[_template_language] detected: generic")
         return "generic"
 
     def _generic_gitignore(self) -> str:
@@ -670,11 +705,19 @@ temp/
     def _workflow(self, language: str) -> str:
         workflow_path = self._WORKFLOW_DIR / f"{language}.yml"
         if not workflow_path.exists():
+            if DEBUG:
+                logger.debug(f"[_workflow] language={language} file NOT FOUND, falling back to generic.yml")
             workflow_path = self._WORKFLOW_DIR / "generic.yml"
-        return workflow_path.read_text(encoding="utf-8").replace(
+        else:
+            if DEBUG:
+                logger.debug(f"[_workflow] language={language} file FOUND at {workflow_path}")
+        content = workflow_path.read_text(encoding="utf-8").replace(
             "__GITHUB_ORG_LOGIN__",
             settings.GITHUB_ORG_LOGIN,
         )
+        if DEBUG:
+            logger.debug(f"[_workflow] language={language} content_len={len(content)} has_disable_autoscan={'Disable Automatic Analysis' in content}")
+        return content
 
     def _org(self):
         try:
