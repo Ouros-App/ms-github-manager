@@ -108,48 +108,11 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
-      - name: Configure SonarCloud
-        run: |
-          owner="__GITHUB_ORG_LOGIN__"
-          repo="${GITHUB_REPOSITORY#*/}"
-          {
-            echo "sonar.organization=${{ secrets.SONAR_ORGANIZATION }}"
-            echo "sonar.projectKey=${owner}_${repo}"
-            echo "sonar.projectName=${repo}"
-            echo "sonar.sources=src/main"
-            echo "sonar.tests=src/test"
-            echo "sonar.java.binaries=build/classes"
-            echo "sonar.junit.reportPaths=build/test-results/test"
-            echo "sonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml"
-            if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-              echo "sonar.branch.name=main"
-            fi
-          } > sonar-project.properties
-
-      - name: Disable Automatic Analysis via API
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          project_key="$(grep '^sonar.projectKey=' sonar-project.properties | cut -d= -f2-)"
-          curl -sS -u "${SONAR_TOKEN}:" -X POST "https://sonarcloud.io/api/projects/update_default_analysis_configuration" \
-            -d "project=${project_key}" \
-            -d "autoScan=false"
-
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
-          SONAR_SCANNER_OPTS: -Dsonar.analysis.detectedCi=GithubActions -Dsonar.autoScan=false
-
-      - name: Publish SonarCloud project
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          project_key="$(grep '^sonar.projectKey=' sonar-project.properties | cut -d= -f2-)"
-          curl -sS -u "${SONAR_TOKEN}:" -X POST "https://sonarcloud.io/api/projects/update_visibility" \
-            -d "project=${project_key}" \
-            -d "visibility=public"
 
   codeql:
     name: codeql

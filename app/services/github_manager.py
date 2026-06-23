@@ -116,6 +116,8 @@ class GitHubRepositoryManager:
             if payload.language == "springboot":
                 await self._step(creation_id, "Aplicando estrutura Spring REST")
                 await asyncio.to_thread(self._put_springboot_scaffold_sync, repo.name)
+                await self._step(creation_id, "Configurando sonar-project.properties")
+                await asyncio.to_thread(self._put_sonar_properties_sync, repo.name)
 
             if self._gitignore_template(payload.language) is None:
                 await self._step(creation_id, "Criando .gitignore generico")
@@ -165,6 +167,8 @@ class GitHubRepositoryManager:
                 await asyncio.to_thread(self._wait_until_paths_absent_sync, repo.name, ["src/main/java", "src/test/java"])
                 await self._step(creation_id, "Aplicando estrutura Spring REST")
                 await asyncio.to_thread(self._put_springboot_scaffold_sync, repo.name)
+                await self._step(creation_id, "Configurando sonar-project.properties")
+                await asyncio.to_thread(self._put_sonar_properties_sync, repo.name)
 
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(
@@ -308,6 +312,29 @@ class GitHubRepositoryManager:
             "src/main/resources/application-local.properties",
         ):
             self._delete_path_sync(repository_name, path)
+
+    def _create_sonar_properties_sync(self, repository_name: str) -> str:
+        application_name = self._springboot_application_name(repository_name)
+        project_key = f"{settings.GITHUB_ORG_LOGIN}_{repository_name}"
+        return f"""sonar.organization={settings.GITHUB_ORG_LOGIN.lower()}
+sonar.projectKey={project_key}
+sonar.projectName={repository_name}
+sonar.sources=src/main
+sonar.tests=src/test
+sonar.java.binaries=build/classes
+sonar.junit.reportPaths=build/test-results/test
+sonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml
+sonar.sourceEncoding=UTF-8
+"""
+
+    def _put_sonar_properties_sync(self, repository_name: str) -> None:
+        content = self._create_sonar_properties_sync(repository_name)
+        self._put_file_sync(
+            repository_name,
+            "sonar-project.properties",
+            content,
+            "ci: configure SonarCloud analysis",
+        )
 
     def _springboot_build_gradle(self) -> str:
         return """plugins {
