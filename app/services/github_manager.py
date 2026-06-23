@@ -110,8 +110,6 @@ class GitHubRepositoryManager:
             repo = await asyncio.to_thread(self._create_bare_repository_sync, payload)
             await self._step(creation_id, "Aguardando branch main")
             await asyncio.to_thread(self._wait_until_repository_ready_sync, repo.name)
-            await self._step(creation_id, "Configurando SonarCloud")
-            await asyncio.to_thread(self._put_sonar_secret_sync, repo.name)
 
             if payload.language == "springboot":
                 await self._step(creation_id, "Aplicando estrutura Spring REST")
@@ -151,8 +149,6 @@ class GitHubRepositoryManager:
             repo = await asyncio.to_thread(self._create_from_template_sync, payload)
             await self._step(creation_id, "Aguardando copia do template")
             await asyncio.to_thread(self._wait_until_repository_ready_sync, repo.name)
-            await self._step(creation_id, "Configurando SonarCloud")
-            await asyncio.to_thread(self._put_sonar_secret_sync, repo.name)
 
             if self._template_language(payload.template_name) == "springboot":
                 await self._step(creation_id, "Aguardando arquivos Spring do template")
@@ -479,15 +475,6 @@ class CLASS_NAMETests {
         if class_name[0].isdigit():
             class_name = f"App{class_name}"
         return f"{class_name}Application"
-
-    def _put_sonar_secret_sync(self, repository_name: str) -> None:
-        if not settings.SONAR_CLOUD_TOKEN:
-            return
-        repo = self._repo(repository_name)
-        try:
-            repo.create_secret("SONAR_TOKEN", settings.SONAR_CLOUD_TOKEN)
-        except GithubException as exc:
-            raise GitHubManagerError(self._format_github_error(exc)) from exc
 
     def _put_file_sync(
         self,
