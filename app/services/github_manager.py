@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
+import httpx
+
 from github import Auth, Github
 from github.GithubException import GithubException, UnknownObjectException
 
@@ -132,6 +134,11 @@ class GitHubRepositoryManager:
 
             await self._step(creation_id, "Aplicando protecao da branch main")
             await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
+
+            if payload.language == "springboot":
+                await self._step(creation_id, "Criando projeto no SonarCloud")
+                await asyncio.to_thread(self._create_sonarcloud_project_sync, repo.name)
+
             await self._mark_succeeded(creation_id, repo.html_url)
         except Exception as exc:
             await self._mark_failed(creation_id, str(exc))
@@ -175,6 +182,11 @@ class GitHubRepositoryManager:
 
             await self._step(creation_id, "Aplicando protecao da branch main")
             await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
+
+            if self._template_language(payload.template_name) == "springboot":
+                await self._step(creation_id, "Criando projeto no SonarCloud")
+                await asyncio.to_thread(self._create_sonarcloud_project_sync, repo.name)
+
             await self._mark_succeeded(creation_id, repo.html_url)
         except Exception as exc:
             await self._mark_failed(creation_id, str(exc))
@@ -331,6 +343,35 @@ sonar.sourceEncoding=UTF-8
             content,
             "ci: configure SonarCloud analysis",
         )
+
+    def _create_sonarcloud_project_sync(self, repository_name: str) -> None:
+        if not settings.SONAR_CLOUD_TOKEN:
+            if DEBUG:
+                logger.debug(f"[_create_sonarcloud_project_sync] SONAR_CLOUD_TOKEN not set, skipping")
+            return
+        project_key = f"{settings.GITHUB_ORG_LOGIN}_{repository_name}"
+        org = settings.GITHUB_ORG_LOGIN.lower()
+        url = "https://sonarcloud.io/api/projects/create"
+        data = {
+            "organization": org,
+            "project": project_key,
+            "name": repository_name,
+            "visibility": "public",
+        }
+        try:
+            resp = httpx.post(
+                url,
+                data=data,
+                auth=(settings.SONAR_CLOUD_TOKEN, ""),
+                timeout=30.0,
+            )
+            if resp.status_code in (200, 400):
+                if DEBUG:
+                    logger.debug(f"[_create_sonarcloud_project_sync] project created/exists: {project_key} status={resp.status_code}")
+            else:
+                raise GitHubManagerError(f"SonarCloud project creation failed: {resp.status_code} {resp.text}")
+        except httpx.RequestError as exc:
+            raise GitHubManagerError(f"SonarCloud API request failed: {exc}") from exc
 
     def _springboot_build_gradle(self) -> str:
         return """plugins {
