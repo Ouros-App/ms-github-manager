@@ -93,29 +93,32 @@ proxima_porta_livre() {
 }
 
 gerar_compose_file() {
-    local numero=$1
-    local porta=$2
-    local base_name=$3
+    local numero="$1"
+    local porta="$2"
+    local base_name="$3"
     local compose_file="docker-compose.${numero}.yml"
 
-    cat > $compose_file << EOF
+    cat > "$compose_file" << EOF
+version: "3.8"
+
 services:
   api:
     build:
-      context: .
-      no_cache: true
-    container_name: ${base_name}_${numero}
+      context: "."
+    image: "${base_name}_${numero}:latest"
+    container_name: "${base_name}_${numero}"
     env_file:
-      - .env
+      - ".env"
     ports:
       - "${porta}:8000"
     volumes:
-      - ./app:/app/app
-      - ./requirements.txt:/app/requirements.txt:ro
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - "./app:/app/app"
+      - "./requirements.txt:/app/requirements.txt:ro"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped
 EOF
-    echo $compose_file
+
+    echo "$compose_file"
 }
 
 buildar_e_subir() {
