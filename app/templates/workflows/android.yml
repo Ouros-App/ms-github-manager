@@ -135,7 +135,21 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: java-kotlin
-          build-mode: none
+          build-mode: manual
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.1.0
+
+      - name: Build for CodeQL
+        run: gradle :app:assembleDebug --no-daemon
 
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@v3
