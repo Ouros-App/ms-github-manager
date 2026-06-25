@@ -797,10 +797,10 @@ class ExampleUnitTest {{
         except UnicodeDecodeError:
             raise GitHubManagerError("settings.gradle.kts Android nao esta em UTF-8.")
 
-        if self._has_android_plugin_repositories(content):
+        if self._has_android_gradle_repositories(content):
             return
 
-        updated = self._merge_android_plugin_repositories(content)
+        updated = self._merge_android_gradle_repositories(content)
         try:
             repo.update_file(
                 path=path,
@@ -812,11 +812,34 @@ class ExampleUnitTest {{
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
+    def _has_android_gradle_repositories(self, content: str) -> bool:
+        dependency_block = self._block_content(content, "dependencyResolutionManagement")
+        if not dependency_block:
+            return False
+        return self._has_android_plugin_repositories(content) and "google()" in dependency_block and "mavenCentral()" in dependency_block
+
     def _has_android_plugin_repositories(self, content: str) -> bool:
         plugin_block = self._block_content(content, "pluginManagement")
         if not plugin_block:
             return False
         return "google()" in plugin_block and "mavenCentral()" in plugin_block and "gradlePluginPortal()" in plugin_block
+
+    def _merge_android_gradle_repositories(self, content: str) -> str:
+        content = self._merge_android_plugin_repositories(content)
+        dependency_block = """dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+"""
+        if "dependencyResolutionManagement" not in content:
+            return self._insert_after_plugin_management(content, dependency_block)
+
+        pattern = r"dependencyResolutionManagement\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*"
+        return re.sub(pattern, dependency_block, content, count=1, flags=re.DOTALL)
 
     def _merge_android_plugin_repositories(self, content: str) -> str:
         plugin_block = """pluginManagement {
@@ -833,6 +856,12 @@ class ExampleUnitTest {{
 
         pattern = r"pluginManagement\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*"
         return re.sub(pattern, plugin_block, content, count=1, flags=re.DOTALL)
+
+    def _insert_after_plugin_management(self, content: str, value: str) -> str:
+        match = re.search(r"pluginManagement\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*", content, flags=re.DOTALL)
+        if not match:
+            return value + content.lstrip()
+        return content[:match.end()] + value + content[match.end():]
 
     def _block_content(self, content: str, block_name: str) -> str | None:
         match = re.search(rf"{re.escape(block_name)}\s*\{{", content)
