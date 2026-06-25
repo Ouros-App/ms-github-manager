@@ -720,6 +720,8 @@ class ExampleUnitTest {{
             display = ", ".join(sorted(set(remaining)))
             raise GitHubManagerError(f"Placeholders Android nao substituidos: {display}")
 
+        self._ensure_android_settings_repositories_sync(repository_name)
+
     def _replace_android_template_file_sync(self, repo, path: str, placeholders: dict[str, str], remaining: list[str]) -> None:
         try:
             item = repo.get_contents(path, ref=settings.DEFAULT_BRANCH)
@@ -770,6 +772,83 @@ class ExampleUnitTest {{
             )
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _ensure_android_settings_repositories_sync(self, repository_name: str) -> None:
+        repo = self._repo(repository_name)
+        path = "settings.gradle.kts"
+        try:
+            item = repo.get_contents(path, ref=settings.DEFAULT_BRANCH)
+        except UnknownObjectException:
+            self._put_file_sync(
+                repository_name,
+                path,
+                self._android_settings_gradle(repository_name),
+                "Configure Android Gradle repositories",
+            )
+            return
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+        if isinstance(item, list):
+            return
+
+        try:
+            content = item.decoded_content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise GitHubManagerError("settings.gradle.kts Android nao esta em UTF-8.")
+
+        if self._has_android_plugin_repositories(content):
+            return
+
+        updated = self._merge_android_plugin_repositories(content)
+        try:
+            repo.update_file(
+                path=path,
+                message="Configure Android Gradle repositories",
+                content=updated,
+                sha=item.sha,
+                branch=settings.DEFAULT_BRANCH,
+            )
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _has_android_plugin_repositories(self, content: str) -> bool:
+        plugin_block = self._block_content(content, "pluginManagement")
+        if not plugin_block:
+            return False
+        return "google()" in plugin_block and "mavenCentral()" in plugin_block and "gradlePluginPortal()" in plugin_block
+
+    def _merge_android_plugin_repositories(self, content: str) -> str:
+        plugin_block = """pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+"""
+        if "pluginManagement" not in content:
+            return plugin_block + content.lstrip()
+
+        pattern = r"pluginManagement\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*"
+        return re.sub(pattern, plugin_block, content, count=1, flags=re.DOTALL)
+
+    def _block_content(self, content: str, block_name: str) -> str | None:
+        match = re.search(rf"{re.escape(block_name)}\s*\{{", content)
+        if not match:
+            return None
+
+        depth = 0
+        for index in range(match.end() - 1, len(content)):
+            char = content[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return content[match.end():index]
+        return None
 
     def _android_template_placeholders(self, repository_name: str) -> dict[str, str]:
         package_name = self._android_namespace(repository_name)
