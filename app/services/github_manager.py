@@ -118,6 +118,9 @@ class GitHubRepositoryManager:
                 await asyncio.to_thread(self._put_springboot_scaffold_sync, repo.name)
                 await self._step(creation_id, "Configurando sonar-project.properties")
                 await asyncio.to_thread(self._put_sonar_properties_sync, repo.name)
+            if payload.language == "android":
+                await self._step(creation_id, "Aplicando estrutura Android Kotlin")
+                await asyncio.to_thread(self._put_android_scaffold_sync, repo.name)
 
             if self._gitignore_template(payload.language) is None:
                 await self._step(creation_id, "Criando .gitignore generico")
@@ -156,8 +159,9 @@ class GitHubRepositoryManager:
             repo = await asyncio.to_thread(self._create_from_template_sync, payload)
             await self._step(creation_id, "Aguardando copia do template")
             await asyncio.to_thread(self._wait_until_repository_ready_sync, repo.name)
+            template_language = self._template_language(payload.template_name)
 
-            if self._template_language(payload.template_name) == "springboot":
+            if template_language == "springboot":
                 await self._step(creation_id, "Aguardando arquivos Spring do template")
                 await asyncio.to_thread(
                     self._wait_until_paths_exist_sync,
@@ -173,17 +177,21 @@ class GitHubRepositoryManager:
                 await self._step(creation_id, "Configurando sonar-project.properties")
                 await asyncio.to_thread(self._put_sonar_properties_sync, repo.name)
 
+            if template_language == "android":
+                await self._step(creation_id, "Inicializando template Android Kotlin")
+                await asyncio.to_thread(self._initialize_android_template_sync, repo.name)
+
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(
                 self._put_workflow_sync,
                 repo.name,
-                self._template_language(payload.template_name),
+                template_language,
             )
 
             await self._step(creation_id, "Aplicando protecao da branch main")
             await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
 
-            if self._template_language(payload.template_name) == "springboot":
+            if template_language == "springboot":
                 await self._step(creation_id, "Criando projeto no SonarCloud")
                 await asyncio.to_thread(self._create_sonarcloud_project_sync, repo.name)
 
@@ -493,6 +501,312 @@ class CLASS_NAMETests {
 }
 """.replace("PACKAGE_NAME", package_name).replace("CLASS_NAME", class_name)
 
+    def _put_android_scaffold_sync(self, repository_name: str) -> None:
+        namespace = self._android_namespace(repository_name)
+        app_name = self._android_app_name(repository_name)
+        files = {
+            "README.md": self._android_readme(repository_name),
+            "settings.gradle.kts": self._android_settings_gradle(repository_name),
+            "build.gradle.kts": self._android_root_build_gradle(),
+            "gradle.properties": self._android_gradle_properties(),
+            "app/build.gradle.kts": self._android_app_build_gradle(namespace),
+            "app/src/main/AndroidManifest.xml": self._android_manifest(namespace, app_name),
+            "app/proguard-rules.pro": "",
+            "app/src/main/java/{}/MainActivity.kt".format(namespace.replace(".", "/")): self._android_main_activity(
+                namespace
+            ),
+            "app/src/main/res/values/strings.xml": self._android_strings(app_name),
+            "app/src/main/res/values/colors.xml": self._android_colors(),
+            "app/src/main/res/values/themes.xml": self._android_themes(),
+            "app/src/test/java/{}/ExampleUnitTest.kt".format(namespace.replace(".", "/")): self._android_unit_test(
+                namespace
+            ),
+        }
+        for path, content in files.items():
+            self._put_file_sync(
+                repository_name,
+                path,
+                content,
+                f"Add Android Kotlin scaffold: {Path(path).name}",
+            )
+
+    def _android_readme(self, repository_name: str) -> str:
+        return f"""# {repository_name}
+
+Projeto Android Kotlin com Gradle, no formato padrao do Android Studio.
+
+## Comandos
+
+```bash
+gradle :app:assembleDebug
+gradle :app:testDebugUnitTest
+```
+"""
+
+    def _android_settings_gradle(self, repository_name: str) -> str:
+        return f"""pluginManagement {{
+    repositories {{
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }}
+}}
+
+dependencyResolutionManagement {{
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {{
+        google()
+        mavenCentral()
+    }}
+}}
+
+rootProject.name = "{repository_name}"
+include(":app")
+"""
+
+    def _android_root_build_gradle(self) -> str:
+        return """plugins {
+    id("com.android.application") version "8.7.3" apply false
+    id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+}
+"""
+
+    def _android_gradle_properties(self) -> str:
+        return """org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+kotlin.code.style=official
+android.nonTransitiveRClass=true
+"""
+
+    def _android_app_build_gradle(self, namespace: str) -> str:
+        return f"""plugins {{
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}}
+
+android {{
+    namespace = "{namespace}"
+    compileSdk = 35
+
+    defaultConfig {{
+        applicationId = "{namespace}"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }}
+
+    buildTypes {{
+        release {{
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }}
+    }}
+    compileOptions {{
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }}
+    kotlinOptions {{
+        jvmTarget = "17"
+    }}
+}}
+
+dependencies {{
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+}}
+"""
+
+    def _android_manifest(self, namespace: str, app_name: str) -> str:
+        return f"""<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.App">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+"""
+
+    def _android_main_activity(self, namespace: str) -> str:
+        return f"""package {namespace}
+
+import android.os.Bundle
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+
+class MainActivity : AppCompatActivity() {{
+    override fun onCreate(savedInstanceState: Bundle?) {{
+        super.onCreate(savedInstanceState)
+        setContentView(TextView(this).apply {{
+            text = getString(R.string.app_name)
+            textSize = 24f
+        }})
+    }}
+}}
+"""
+
+    def _android_strings(self, app_name: str) -> str:
+        return f"""<resources>
+    <string name="app_name">{app_name}</string>
+</resources>
+"""
+
+    def _android_colors(self) -> str:
+        return """<resources>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+</resources>
+"""
+
+    def _android_themes(self) -> str:
+        return """<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.App" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">@color/teal_200</item>
+        <item name="android:statusBarColor" tools:targetApi="l">?attr/colorPrimaryVariant</item>
+    </style>
+</resources>
+"""
+
+    def _android_unit_test(self, namespace: str) -> str:
+        return f"""package {namespace}
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ExampleUnitTest {{
+    @Test
+    fun addition_isCorrect() {{
+        assertEquals(4, 2 + 2)
+    }}
+}}
+"""
+
+    def _initialize_android_template_sync(self, repository_name: str) -> None:
+        repo = self._repo(repository_name)
+        placeholders = self._android_template_placeholders(repository_name)
+        branch = repo.get_branch(settings.DEFAULT_BRANCH)
+        tree = repo.get_git_tree(branch.commit.sha, recursive=True)
+        remaining: list[str] = []
+
+        for item in tree.tree:
+            if item.type != "blob":
+                continue
+            self._replace_android_template_file_sync(repo, item.path, placeholders, remaining)
+
+        if remaining:
+            display = ", ".join(sorted(set(remaining)))
+            raise GitHubManagerError(f"Placeholders Android nao substituidos: {display}")
+
+    def _replace_android_template_file_sync(self, repo, path: str, placeholders: dict[str, str], remaining: list[str]) -> None:
+        try:
+            item = repo.get_contents(path, ref=settings.DEFAULT_BRANCH)
+        except UnknownObjectException:
+            return
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+        if isinstance(item, list):
+            return
+
+        try:
+            original_content = item.decoded_content.decode("utf-8")
+        except UnicodeDecodeError:
+            return
+
+        new_path = self._replace_placeholders(path, placeholders)
+        new_content = self._replace_placeholders(original_content, placeholders)
+        leftovers = re.findall(r"\{\{[A-Z_]+\}\}", new_content)
+        if leftovers:
+            remaining.extend(f"{placeholder} em {new_path}" for placeholder in leftovers)
+
+        if new_path == path and new_content == original_content:
+            return
+
+        try:
+            if new_path == path:
+                repo.update_file(
+                    path=path,
+                    message=f"Initialize Android template: {Path(path).name}",
+                    content=new_content,
+                    sha=item.sha,
+                    branch=settings.DEFAULT_BRANCH,
+                )
+                return
+
+            repo.create_file(
+                path=new_path,
+                message=f"Initialize Android template: {Path(new_path).name}",
+                content=new_content,
+                branch=settings.DEFAULT_BRANCH,
+            )
+            repo.delete_file(
+                path=path,
+                message=f"Remove Android template placeholder path: {path}",
+                sha=item.sha,
+                branch=settings.DEFAULT_BRANCH,
+            )
+        except GithubException as exc:
+            raise GitHubManagerError(self._format_github_error(exc)) from exc
+
+    def _android_template_placeholders(self, repository_name: str) -> dict[str, str]:
+        package_name = self._android_namespace(repository_name)
+        return {
+            "{{PROJECT_NAME}}": repository_name,
+            "{{APP_LABEL}}": self._android_app_name(repository_name),
+            "{{PACKAGE_NAME}}": package_name,
+            "{{PACKAGE_PATH}}": package_name.replace(".", "/"),
+            "{{APPLICATION_CLASS_NAME}}": self._android_application_class_name(repository_name),
+        }
+
+    def _replace_placeholders(self, value: str, placeholders: dict[str, str]) -> str:
+        for placeholder, replacement in placeholders.items():
+            value = value.replace(placeholder, replacement)
+        return value
+
+    def _android_namespace(self, repository_name: str) -> str:
+        normalized = re.sub(r"[-_.]?template$", "", repository_name.lower())
+        normalized = re.sub(r"[^a-z0-9]+", "", normalized)
+        if not normalized:
+            normalized = "app"
+        if normalized[0].isdigit():
+            normalized = f"app{normalized}"
+        return f"com.ourosapp.{normalized}"
+
+    def _android_app_name(self, repository_name: str) -> str:
+        normalized = re.sub(r"[-_.]?template$", "", repository_name)
+        normalized = re.sub(r"[-_.]+", " ", normalized).strip()
+        return normalized or "Ouros App"
+
+    def _android_application_class_name(self, repository_name: str) -> str:
+        parts = re.findall(r"[A-Za-z0-9]+", self._android_app_name(repository_name))
+        class_name = "".join(part[:1].upper() + part[1:] for part in parts) or "Ouros"
+        if class_name[0].isdigit():
+            class_name = f"App{class_name}"
+        return f"{class_name}Application"
+
     def _springboot_package_name(self, repository_name: str) -> str:
         normalized = self._springboot_application_name(repository_name)
         normalized = re.sub(r"[^a-z0-9]+", "", normalized)
@@ -712,6 +1026,7 @@ class CLASS_NAMETests {
             "frontend": "Node",
             "springboot": "Java",
             "fastapi": "Python",
+            "android": "Android",
         }
         return templates.get(language)
 
@@ -732,6 +1047,10 @@ class CLASS_NAMETests {
             if DEBUG:
                 logger.debug(f"[_template_language] detected: springboot")
             return "springboot"
+        if "android" in normalized_name or "kotlin" in normalized_name or "mobile" in normalized_name:
+            if DEBUG:
+                logger.debug(f"[_template_language] detected: android")
+            return "android"
         if "fastapi" in normalized_name:
             if DEBUG:
                 logger.debug(f"[_template_language] detected: fastapi")

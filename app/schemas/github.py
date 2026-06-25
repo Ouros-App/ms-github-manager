@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 RepositoryVisibility = Literal["private", "public", "internal"]
-RepositoryLanguage = Literal["frontend", "springboot", "fastapi"]
+RepositoryLanguage = Literal["frontend", "springboot", "fastapi", "android"]
 CreationStatusValue = Literal["queued", "running", "done", "failed"]
 
 
@@ -53,6 +53,12 @@ class BareRepositoryCreateRequest(BaseModel):
                     "description": "API de faturamento",
                     "visibility": "private",
                     "language": "fastapi",
+                },
+                {
+                    "name": "mobile-app",
+                    "description": "Aplicativo Android",
+                    "visibility": "private",
+                    "language": "android",
                 },
             ]
         }

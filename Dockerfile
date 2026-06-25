@@ -22,6 +22,7 @@ COPY .env .
 # Verificar templates
 RUN test -f app/templates/workflows/fastapi.yml \
     && test -f app/templates/workflows/frontend.yml \
+    && test -f app/templates/workflows/android.yml \
     && test -f app/templates/workflows/springboot.yml \
     && test -f app/templates/workflows/generic.yml
 

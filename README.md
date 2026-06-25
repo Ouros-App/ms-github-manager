@@ -9,7 +9,7 @@ O servico usa `GH_TOKEN` ou `GITHUB_TOKEN` definido no `.env` para autenticar na
 - Lista repositorios de template da organizacao cujo nome termina em `-template`.
 - Cria repositorio no modo cru com README, licenca MIT e `.gitignore` por linguagem quando disponivel.
 - Cria repositorio a partir de um template existente na mesma organizacao.
-- Aplica workflow de CI/CD com build, testes e SonarCloud para React + TypeScript + Vite, Java Spring REST com Gradle e Python FastAPI.
+- Aplica workflow de CI/CD com build, testes e SonarCloud para React + TypeScript + Vite, Java Spring REST com Gradle, Python FastAPI e Android Kotlin com Gradle.
 - Aplica protecao na branch `main`, exigindo pull request, uma aprovacao, status checks `ci`, `conventional-commits`, `sonarcloud` e `codeql`, historico linear e conversas resolvidas.
 - Expoe Swagger UI em `/docs`, ReDoc em `/redoc` e OpenAPI JSON em `/openapi.json`.
 - Expoe status de criacao por `creation_id`.
@@ -77,9 +77,9 @@ POST /repositories/bare
 
 Valores aceitos para `visibility`: `private`, `public`, `internal`.
 
-Valores aceitos para `language`: `frontend`, `springboot`, `fastapi`.
+Valores aceitos para `language`: `frontend`, `springboot`, `fastapi`, `android`.
 
-O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. O template Spring gera um esqueleto REST com `build.gradle`, `settings.gradle`, controllers, teste basico, plugins de `jacoco` e `sonarqube`, e sobrescreve `application.properties` e `application-local.properties` com base no nome do repositorio, descartando o prefixo `ms-` e o sufixo `-template` quando existirem. Quando o repo nasce de um template Spring, a estrutura herdada em `src/main/java`, `src/main/kotlin`, `src/test/java` e `src/test/kotlin` tambem e limpa antes de gerar as classes novas. Exemplo: `ms-orders-api-template` vira `spring.application.name=orders-api`, `com.ourosapp.ordersapi` e `OrdersApiApplication`. O SonarCloud roda em um job separado chamado `sonarcloud` e usa `SONAR_TOKEN` como secret do repositorio. O GitHub CodeQL roda em paralelo no job `codeql`. O deploy nao faz parte desse workflow: releases podem disparar outra pipeline separada.
+O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. O template Spring gera um esqueleto REST com `build.gradle`, `settings.gradle`, controllers, teste basico, plugins de `jacoco` e `sonarqube`, e sobrescreve `application.properties` e `application-local.properties` com base no nome do repositorio, descartando o prefixo `ms-` e o sufixo `-template` quando existirem. O template Android gera estrutura Kotlin/Gradle no padrao do Android Studio com `settings.gradle.kts`, `build.gradle.kts`, modulo `app`, `AndroidManifest.xml`, `MainActivity.kt`, recursos e teste unitario. Quando o repo nasce de um template Android, o servico substitui `{{PROJECT_NAME}}`, `{{APP_LABEL}}`, `{{PACKAGE_NAME}}`, `{{PACKAGE_PATH}}` e `{{APPLICATION_CLASS_NAME}}`, incluindo caminhos de arquivo. Quando o repo nasce de um template Spring, a estrutura herdada em `src/main/java`, `src/main/kotlin`, `src/test/java` e `src/test/kotlin` tambem e limpa antes de gerar as classes novas. Exemplo: `ms-orders-api-template` vira `spring.application.name=orders-api`, `com.ourosapp.ordersapi` e `OrdersApiApplication`. O SonarCloud roda em um job separado chamado `sonarcloud` e usa `SONAR_TOKEN` como secret do repositorio. O GitHub CodeQL roda em paralelo no job `codeql`. O deploy nao faz parte desse workflow: releases podem disparar outra pipeline separada.
 Os templates usados ficam em `app/templates/workflows`.
 
 ### Criar repositorio a partir de template
@@ -97,7 +97,7 @@ POST /repositories/from-template
 }
 ```
 
-O workflow de CI/CD e escolhido pelo nome do template quando ele contem `frontend`, `react`, `vite`, `typescript`, `spring`, `java` ou `fastapi`. Outros templates recebem um workflow generico.
+O workflow de CI/CD e escolhido pelo nome do template quando ele contem `frontend`, `react`, `vite`, `typescript`, `spring`, `java`, `android`, `kotlin`, `mobile` ou `fastapi`. Outros templates recebem um workflow generico.
 
 O repositorio escolhido em `template_name` precisa estar marcado como template no GitHub. Se o nome existir mas o repo nao estiver habilitado como template, a API do GitHub pode responder com `404 Not Found`.
 
