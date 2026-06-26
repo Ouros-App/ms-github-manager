@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ouros GitHub Manager</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script defer src="/static/app.js"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <span class="product">Ouros App</span>
+          <h1>Repository Manager</h1>
+        </div>
+        <div class="status-strip">
+          <span><b id="serviceStatus">...</b> API</span>
+          <span><b id="orgName">-</b> org</span>
+          <span><b id="defaultBranch">-</b> branch</span>
+          <span><b id="templateCount">0</b> templates</span>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <section class="surface creator">
+          <div class="section-head">
+            <div>
+              <span class="label">Criar repositorio</span>
+              <h2>Dados do novo projeto</h2>
+            </div>
+            <div class="mode-tabs" id="modeSwitch">
+              <button type="button" class="mode-tab is-active" data-mode="bare">Repositorio cru</button>
+              <button type="button" class="mode-tab" data-mode="template">Usar template</button>
+            </div>
+          </div>
+
+          <form id="repoForm" class="form">
+            <div class="field">
+              <label for="repoName">Nome do repositorio</label>
+              <input id="repoName" name="name" placeholder="ms-orders-api" autocomplete="off" required />
+            </div>
+
+            <div class="field">
+              <label for="repoDescription">Descricao</label>
+              <textarea id="repoDescription" name="description" rows="3" placeholder="API de pedidos"></textarea>
+            </div>
+
+            <div class="form-row">
+              <div class="field">
+                <label for="repoVisibility">Visibilidade</label>
+                <select id="repoVisibility" name="visibility">
+                  <option value="private">private</option>
+                  <option value="public">public</option>
+                  <option value="internal">internal</option>
+                </select>
+              </div>
+
+              <div class="field" id="languageField">
+                <label for="repoLanguage">Stack inicial</label>
+                <select id="repoLanguage" name="language">
+                  <option value="fastapi">FastAPI</option>
+                  <option value="springboot">Spring Boot</option>
+                  <option value="frontend">Frontend React/Vite</option>
+                  <option value="android">Android Kotlin</option>
+                </select>
+              </div>
+
+              <div class="field is-hidden" id="templateField">
+                <label for="templateSelect">Template base</label>
+                <select id="templateSelect" name="template_name"></select>
+              </div>
+            </div>
+
+            <div class="notice" id="modeHint">Cria um repositorio vazio com scaffold e workflow conforme a stack.</div>
+
+            <div class="form-actions">
+              <button type="submit" id="submitBtn">Criar repositorio</button>
+              <button type="button" class="button-secondary" id="resetBtn">Limpar</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="surface tracker">
+          <div class="section-head tracker-head">
+            <div>
+              <span class="label">Andamento</span>
+              <h2>Status da criacao</h2>
+            </div>
+            <span class="tracking-badge" id="trackingBadge" data-state="idle">Inativo</span>
+          </div>
+
+          <form id="statusForm" class="lookup">
+            <input name="creation_id" placeholder="creation_id" required />
+            <button type="submit" class="button-secondary">Buscar</button>
+          </form>
+
+          <dl class="details">
+            <div>
+              <dt>Status</dt>
+              <dd id="trackedState">-</dd>
+            </div>
+            <div>
+              <dt>Repositorio</dt>
+              <dd id="trackedRepo">-</dd>
+            </div>
+            <div>
+              <dt>Modo</dt>
+              <dd id="trackedMode">-</dd>
+            </div>
+            <div>
+              <dt>ID</dt>
+              <dd id="trackedId">-</dd>
+            </div>
+          </dl>
+
+          <div class="step-box">
+            <span>Etapa atual</span>
+            <strong id="trackedStep">Nenhuma criacao selecionada.</strong>
+          </div>
+
+          <div class="tracker-actions">
+            <a id="trackedUrl" class="repo-link is-disabled" target="_blank" rel="noreferrer">Abrir no GitHub</a>
+            <button type="button" class="button-secondary" id="stopTracking">Parar</button>
+          </div>
+
+          <ol id="stepsList" class="steps">
+            <li class="empty">Nenhuma etapa registrada.</li>
+          </ol>
+        </aside>
+      </section>
+
+      <section class="lower-grid">
+        <section class="surface">
+          <div class="section-head">
+            <div>
+              <span class="label">Templates</span>
+              <h2>Repositorios disponiveis</h2>
+            </div>
+            <button id="refreshTemplates" type="button" class="button-secondary">Atualizar</button>
+          </div>
+          <div id="templatesList" class="template-list"></div>
+        </section>
+
+        <section class="surface output-panel">
+          <div class="section-head">
+            <div>
+              <span class="label">Retorno da API</span>
+              <h2>Ultima resposta</h2>
+            </div>
+          </div>
+          <pre id="resultBox" class="output">Aguardando acao.</pre>
+          <pre id="statusBox" class="output output-muted">Nenhum status consultado ainda.</pre>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

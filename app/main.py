@@ -1,7 +1,11 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
 from app.core.config import settings
+from pathlib import Path
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -23,3 +27,4 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

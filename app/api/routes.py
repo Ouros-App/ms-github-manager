@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.core.config import settings
 from app.schemas.common import HealthResponse, MessageResponse
@@ -12,6 +15,7 @@ from app.schemas.github import (
 from app.services.github_manager import GitHubManagerError, github_manager
 
 router = APIRouter()
+STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 
 
 @router.get(
@@ -22,6 +26,22 @@ router = APIRouter()
 )
 async def read_root() -> MessageResponse:
     return MessageResponse(message="Ouros GitHub Repository Manager is running")
+
+
+@router.get(
+    "/ui",
+    include_in_schema=False,
+)
+async def read_ui() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@router.get(
+    "/app",
+    include_in_schema=False,
+)
+async def read_app() -> RedirectResponse:
+    return RedirectResponse(url="/ui", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @router.get(
