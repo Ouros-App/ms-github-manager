@@ -1,0 +1,83 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  conventional-commits:
+    name: conventional-commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "$PR_TITLE" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|deps)(\([A-Za-z0-9_.-]+\))?(!)?: .+'
+
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Validate scaffold
+        run: |
+          test -f README.md
+          test -f config.yaml
+          test -f scripts/migrate.py
+          test -f migrations/V1__init.sql
+          python -m compileall scripts
+
+  sql:
+    name: sql
+    runs-on: ubuntu-latest
+    needs: ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate migration naming
+        run: |
+          find migrations -type f -name 'V*__*.sql' | sort | grep -q .
+          if find migrations -type f -name '*.sql' | grep -Ev '/V[0-9]+__[^/]+\.sql$' | grep -q .; then
+            echo "Invalid migration naming"
+            exit 1
+          fi
+
+      - name: Validate idempotent SQL markers
+        run: |
+          if grep -RInE '\b(INSERT|UPDATE|DELETE|DROP DATABASE)\b' migrations; then
+            echo "DML or forbidden statement found"
+            exit 1
+          fi
+          if ! grep -RInE 'IF NOT EXISTS|IF EXISTS' migrations; then
+            echo "Missing idempotent guard"
+            exit 1
+          fi

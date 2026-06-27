@@ -1,12 +1,23 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 RepositoryVisibility = Literal["private", "public", "internal"]
-RepositoryLanguage = Literal["frontend", "springboot", "fastapi", "android"]
+RepositoryLanguage = Literal["generic", "frontend", "springboot", "fastapi", "android", "postgres"]
 CreationStatusValue = Literal["queued", "running", "done", "failed"]
+
+
+def _is_postgres_template(template_name: str) -> bool:
+    normalized = template_name.lower()
+    return any(token in normalized for token in ("postgres", "postgresql", "database", "migration", "db"))
+
+
+def _validate_database_suffix(name: str) -> str:
+    if not name.lower().endswith("-database"):
+        raise ValueError("Repositorios PostgreSQL devem terminar com '-database'.")
+    return name
 
 
 class TemplateResponse(BaseModel):
@@ -31,11 +42,17 @@ class BareRepositoryCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
     description: str | None = Field(default=None, max_length=350)
     visibility: RepositoryVisibility = "private"
-    language: RepositoryLanguage = "fastapi"
+    language: RepositoryLanguage = "generic"
 
     model_config = {
         "json_schema_extra": {
             "examples": [
+                {
+                    "name": "shared-lib",
+                    "description": "Repositorio cru com workflow generico",
+                    "visibility": "private",
+                    "language": "generic",
+                },
                 {
                     "name": "web-admin",
                     "description": "Frontend administrativo",
@@ -60,9 +77,21 @@ class BareRepositoryCreateRequest(BaseModel):
                     "visibility": "private",
                     "language": "android",
                 },
+                {
+                    "name": "db-migrations",
+                    "description": "Repositorio de migracoes PostgreSQL",
+                    "visibility": "private",
+                    "language": "postgres",
+                },
             ]
         }
     }
+
+    @model_validator(mode="after")
+    def validate_postgres_name(self) -> "BareRepositoryCreateRequest":
+        if self.language == "postgres":
+            _validate_database_suffix(self.name)
+        return self
 
 
 class TemplateRepositoryCreateRequest(BaseModel):
@@ -81,6 +110,12 @@ class TemplateRepositoryCreateRequest(BaseModel):
             }
         }
     }
+
+    @model_validator(mode="after")
+    def validate_postgres_template_name(self) -> "TemplateRepositoryCreateRequest":
+        if _is_postgres_template(self.template_name):
+            _validate_database_suffix(self.name)
+        return self
 
 
 class RepositoryCreationResponse(BaseModel):

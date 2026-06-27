@@ -1,11 +1,15 @@
 const $ = (s) => document.querySelector(s);
 const form = $("#repoForm");
-const statusForm = $("#statusForm");
 const modeBtns = [...document.querySelectorAll(".mode-tab")];
 
 let mode = "bare";
 let pollRef = null;
 let activeCreationId = "";
+
+function isPostgresTemplateName(value) {
+  const normalized = String(value || "").toLowerCase();
+  return ["postgres", "postgresql", "database", "migration", "db"].some((token) => normalized.includes(token));
+}
 
 function pretty(v) {
   return typeof v === "string" ? v : JSON.stringify(v, null, 2);
@@ -31,6 +35,19 @@ function setOutput(id, value) {
   $(id).textContent = pretty(value);
 }
 
+function syncTemplateWarning() {
+  const warning = $("#templateWarning");
+  const suffix = $("#nameSuffix");
+  const input = $("#repoName");
+  if (!warning) return;
+  const selected = $("#templateSelect")?.value || "";
+  const show = mode === "template" && isPostgresTemplateName(selected);
+  warning.classList.toggle("is-hidden", !show);
+  suffix?.classList.toggle("is-hidden", !show);
+  input?.classList.toggle("with-suffix", show);
+  input.placeholder = show ? "ms-orders" : "ms-orders-api";
+}
+
 function setMode(nextMode) {
   mode = nextMode;
   for (const btn of modeBtns) {
@@ -40,10 +57,11 @@ function setMode(nextMode) {
   $("#templateField").classList.toggle("is-hidden", nextMode !== "template");
   $("#modeHint").textContent =
     nextMode === "bare"
-      ? "Cria um repositorio vazio com scaffold e workflow conforme a stack."
+      ? "Cria um repositorio cru com .gitignore e workflow generico por padrao."
       : "Cria um repositorio a partir de um template existente na organizacao.";
   $("#submitBtn").textContent =
     nextMode === "bare" ? "Criar repositorio" : "Criar usando template";
+  syncTemplateWarning();
 }
 
 function setTrackingBadge(text, state) {
@@ -149,6 +167,7 @@ async function loadTemplates() {
       `;
       list.appendChild(card);
     }
+    syncTemplateWarning();
   } catch (err) {
     list.innerHTML = '<div class="template-card empty">Falha ao carregar templates.</div>';
     setOutput("#resultBox", { error: err.message });
@@ -163,7 +182,6 @@ async function fetchCreation(id) {
 
 async function startTracking(id) {
   activeCreationId = id;
-  statusForm.elements.creation_id.value = id;
   stopPolling();
   const first = await fetchCreation(id);
   if (first.status === "done" || first.status === "failed") return;
@@ -186,16 +204,27 @@ function collectPayload() {
   if (!raw.description) delete raw.description;
   if (mode === "bare") {
     delete raw.template_name;
+    raw.language = "generic";
     return raw;
+  }
+  if (isPostgresTemplateName(raw.template_name || "")) {
+    raw.name = `${String(raw.name || "").replace(/-database$/i, "")}-database`;
   }
   delete raw.language;
   return raw;
+}
+
+function validateBeforeSubmit(payload) {
+  if (mode === "template" && isPostgresTemplateName(payload.template_name || "") && !String(payload.name || "").replace(/-database$/i, "").trim()) {
+    throw new Error("Informe o nome base do repositorio antes do sufixo '-database'.");
+  }
 }
 
 async function submitCreation(event) {
   event.preventDefault();
   const url = mode === "bare" ? "/repositories/bare" : "/repositories/from-template";
   const payload = collectPayload();
+  validateBeforeSubmit(payload);
   setOutput("#resultBox", { status: "sending", payload });
   try {
     const data = await req(url, { method: "POST", body: JSON.stringify(payload) });
@@ -211,8 +240,6 @@ async function submitCreation(event) {
 function resetForm() {
   form.reset();
   if ($("#templateSelect").options.length) $("#templateSelect").selectedIndex = 0;
-  $("#repoVisibility").value = "private";
-  $("#repoLanguage").value = "fastapi";
 }
 
 modeBtns.forEach((btn) => {
@@ -221,24 +248,14 @@ modeBtns.forEach((btn) => {
 
 form.addEventListener("submit", submitCreation);
 
-statusForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const id = new FormData(statusForm).get("creation_id");
-  if (!id) return;
-  try {
-    await startTracking(id);
-  } catch (err) {
-    setTrackingBadge("Falhou", "failed");
-    setOutput("#statusBox", { error: err.message });
-  }
-});
-
 $("#refreshTemplates").addEventListener("click", loadTemplates);
 $("#resetBtn").addEventListener("click", resetForm);
+$("#templateSelect")?.addEventListener("change", syncTemplateWarning);
 $("#stopTracking").addEventListener("click", () => {
   stopPolling();
   activeCreationId = "";
   setTrackingBadge("Inativo", "idle");
+  $("#trackedStep").textContent = "Acompanhamento pausado.";
 });
 
 setMode("bare");

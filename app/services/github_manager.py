@@ -121,6 +121,9 @@ class GitHubRepositoryManager:
             if payload.language == "android":
                 await self._step(creation_id, "Aplicando estrutura Android Kotlin")
                 await asyncio.to_thread(self._put_android_scaffold_sync, repo.name)
+            if payload.language == "postgres":
+                await self._step(creation_id, "Aplicando estrutura PostgreSQL")
+                await asyncio.to_thread(self._put_postgres_scaffold_sync, repo.name)
 
             if self._gitignore_template(payload.language) is None:
                 await self._step(creation_id, "Criando .gitignore generico")
@@ -180,6 +183,9 @@ class GitHubRepositoryManager:
             if template_language == "android":
                 await self._step(creation_id, "Inicializando template Android Kotlin")
                 await asyncio.to_thread(self._initialize_android_template_sync, repo.name)
+            if template_language == "postgres":
+                await self._step(creation_id, "Inicializando template PostgreSQL")
+                await asyncio.to_thread(self._put_postgres_scaffold_sync, repo.name)
 
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(
@@ -221,12 +227,10 @@ class GitHubRepositoryManager:
         kwargs = {
             "name": payload.name,
             "description": payload.description or "",
-            "private": payload.visibility == "private",
+            "private": False,
             "auto_init": True,
             "license_template": "mit",
         }
-        if payload.visibility != "private":
-            kwargs["visibility"] = payload.visibility
         gitignore_template = self._gitignore_template(payload.language)
         if gitignore_template is not None:
             kwargs["gitignore_template"] = gitignore_template
@@ -244,7 +248,7 @@ class GitHubRepositoryManager:
                     "owner": settings.GITHUB_ORG_LOGIN,
                     "name": payload.name,
                     "description": payload.description or "",
-                    "private": payload.visibility == "private",
+                    "private": False,
                     "include_all_branches": False,
                 },
             )
@@ -1135,6 +1139,7 @@ class ExampleUnitTest {{
             "springboot": "Java",
             "fastapi": "Python",
             "android": "Android",
+            "postgres": "Python",
         }
         return templates.get(language)
 
@@ -1163,9 +1168,100 @@ class ExampleUnitTest {{
             if DEBUG:
                 logger.debug(f"[_template_language] detected: fastapi")
             return "fastapi"
+        if "postgres" in normalized_name or "postgresql" in normalized_name or "migration" in normalized_name or "db" in normalized_name:
+            if DEBUG:
+                logger.debug(f"[_template_language] detected: postgres")
+            return "postgres"
         if DEBUG:
             logger.debug(f"[_template_language] detected: generic")
         return "generic"
+
+    def _put_postgres_scaffold_sync(self, repository_name: str) -> None:
+        files = {
+            "README.md": self._postgres_readme(repository_name),
+            "config.yaml": self._postgres_config_yaml(repository_name),
+            ".env.example": self._postgres_env_example(),
+            "requirements.txt": self._postgres_requirements_txt(),
+            "scripts/migrate.py": self._postgres_migrate_py(),
+            "migrations/V1__init.sql": self._postgres_initial_migration(),
+        }
+        for path, content in files.items():
+            self._put_file_sync(repository_name, path, content, f"Add PostgreSQL template file: {path}")
+
+    def _postgres_readme(self, repository_name: str) -> str:
+        app_name = self._postgres_app_name(repository_name)
+        return f"""# {app_name}
+
+Template para migrações PostgreSQL versionadas em GitHub.
+
+## Estrutura
+
+- `migrations/`: scripts SQL numerados no formato `V1__descricao.sql`
+- `scripts/migrate.py`: orquestrador local das migrações
+- `config.yaml`: configuração do ambiente
+- `.env.example`: variáveis sensíveis
+
+## Convenções
+
+- scripts apenas de DDL
+- scripts idempotentes
+- execução sequencial por versão
+- transação por arquivo
+"""
+
+    def _postgres_config_yaml(self, repository_name: str) -> str:
+        return f"""project: {repository_name}
+database:
+  engine: postgresql
+  migrations_path: migrations
+  control_table: controle_versoes
+"""
+
+    def _postgres_env_example(self) -> str:
+        return """POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=app
+POSTGRES_USER=app
+POSTGRES_PASSWORD=app
+GITHUB_TOKEN=
+GITHUB_REPOSITORY=
+"""
+
+    def _postgres_requirements_txt(self) -> str:
+        return """psycopg2-binary==2.9.9
+PyYAML==6.0.2
+python-dotenv==1.0.1
+requests==2.32.3
+"""
+
+    def _postgres_migrate_py(self) -> str:
+        return """#!/usr/bin/env python3
+from pathlib import Path
+
+
+def main() -> None:
+    root = Path(__file__).resolve().parents[1]
+    print(f"PostgreSQL migrations scaffold at {root}")
+
+
+if __name__ == "__main__":
+    main()
+"""
+
+    def _postgres_initial_migration(self) -> str:
+        return """-- V1__init.sql
+CREATE TABLE IF NOT EXISTS controle_versoes (
+    id SERIAL PRIMARY KEY,
+    versao VARCHAR(50) UNIQUE NOT NULL,
+    aplicado_em TIMESTAMP DEFAULT NOW()
+);
+"""
+
+    def _postgres_app_name(self, repository_name: str) -> str:
+        normalized = re.sub(r"^ms-", "", repository_name, flags=re.IGNORECASE)
+        normalized = re.sub(r"[-_.]?template$", "", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"[^A-Za-z0-9]+", " ", normalized).strip()
+        return normalized or "postgres"
 
     def _generic_gitignore(self) -> str:
         return """# Environment

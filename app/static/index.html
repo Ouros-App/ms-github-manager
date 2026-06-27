@@ -9,119 +9,95 @@
   </head>
   <body>
     <main class="app">
-      <header class="topbar">
+      <header class="app-header">
         <div>
-          <span class="product">Ouros App</span>
-          <h1>Repository Manager</h1>
+          <span class="brand">Ouros App</span>
+          <h1>GitHub Repository Manager</h1>
         </div>
-        <div class="status-strip">
-          <span><b id="serviceStatus">...</b> API</span>
-          <span><b id="orgName">-</b> org</span>
-          <span><b id="defaultBranch">-</b> branch</span>
-          <span><b id="templateCount">0</b> templates</span>
+        <div class="health-grid">
+          <div><strong id="serviceStatus">...</strong><span>API</span></div>
+          <div><strong id="orgName">-</strong><span>Organizacao</span></div>
+          <div><strong id="defaultBranch">-</strong><span>Branch</span></div>
+          <div><strong id="templateCount">0</strong><span>Templates</span></div>
         </div>
       </header>
 
-      <section class="workspace">
-        <section class="surface creator">
-          <div class="section-head">
+      <section class="main-grid">
+        <section class="card create-card">
+          <div class="card-header">
             <div>
-              <span class="label">Criar repositorio</span>
-              <h2>Dados do novo projeto</h2>
+              <span class="eyebrow">Criacao</span>
+              <h2>Novo repositorio</h2>
             </div>
             <div class="mode-tabs" id="modeSwitch">
-              <button type="button" class="mode-tab is-active" data-mode="bare">Repositorio cru</button>
-              <button type="button" class="mode-tab" data-mode="template">Usar template</button>
+              <button type="button" class="mode-tab is-active" data-mode="bare">Cru</button>
+              <button type="button" class="mode-tab" data-mode="template">Template</button>
             </div>
           </div>
 
-          <form id="repoForm" class="form">
-            <div class="field">
-              <label for="repoName">Nome do repositorio</label>
-              <input id="repoName" name="name" placeholder="ms-orders-api" autocomplete="off" required />
-            </div>
+          <form id="repoForm" class="repo-form">
+            <label class="field">
+              <span>Nome</span>
+              <div class="name-input">
+                <input id="repoName" name="name" placeholder="ms-orders-api" autocomplete="off" required />
+                <span class="name-suffix is-hidden" id="nameSuffix">-database</span>
+              </div>
+            </label>
 
-            <div class="field">
-              <label for="repoDescription">Descricao</label>
+            <label class="field">
+              <span>Descricao</span>
               <textarea id="repoDescription" name="description" rows="3" placeholder="API de pedidos"></textarea>
-            </div>
+            </label>
 
-            <div class="form-row">
-              <div class="field">
-                <label for="repoVisibility">Visibilidade</label>
-                <select id="repoVisibility" name="visibility">
-                  <option value="private">private</option>
-                  <option value="public">public</option>
-                  <option value="internal">internal</option>
-                </select>
+            <div class="field-grid">
+              <div class="field workflow-field" id="languageField">
+                <span>Workflow inicial</span>
+                <div class="fixed-value">generic</div>
               </div>
 
-              <div class="field" id="languageField">
-                <label for="repoLanguage">Stack inicial</label>
-                <select id="repoLanguage" name="language">
-                  <option value="fastapi">FastAPI</option>
-                  <option value="springboot">Spring Boot</option>
-                  <option value="frontend">Frontend React/Vite</option>
-                  <option value="android">Android Kotlin</option>
-                </select>
-              </div>
-
-              <div class="field is-hidden" id="templateField">
-                <label for="templateSelect">Template base</label>
+              <label class="field is-hidden" id="templateField">
+                <span>Template</span>
                 <select id="templateSelect" name="template_name"></select>
-              </div>
+              </label>
             </div>
+            <input type="hidden" name="visibility" value="public" />
 
-            <div class="notice" id="modeHint">Cria um repositorio vazio com scaffold e workflow conforme a stack.</div>
+            <p class="hint" id="modeHint">Cria um repositorio cru com `.gitignore` e workflow generico por padrao.</p>
+            <p class="template-warning is-hidden" id="templateWarning">
+              Template PostgreSQL detectado. O nome do repositorio deve terminar com <code>-database</code>.
+            </p>
 
-            <div class="form-actions">
+            <div class="actions">
               <button type="submit" id="submitBtn">Criar repositorio</button>
-              <button type="button" class="button-secondary" id="resetBtn">Limpar</button>
+              <button type="button" class="secondary" id="resetBtn">Limpar</button>
             </div>
           </form>
         </section>
 
-        <aside class="surface tracker">
-          <div class="section-head tracker-head">
+        <aside class="card status-card">
+          <div class="card-header">
             <div>
-              <span class="label">Andamento</span>
+              <span class="eyebrow">Andamento</span>
               <h2>Status da criacao</h2>
             </div>
-            <span class="tracking-badge" id="trackingBadge" data-state="idle">Inativo</span>
+            <span class="status-pill" id="trackingBadge" data-state="idle">Inativo</span>
           </div>
 
-          <form id="statusForm" class="lookup">
-            <input name="creation_id" placeholder="creation_id" required />
-            <button type="submit" class="button-secondary">Buscar</button>
-          </form>
+          <div class="current-step">
+            <span>Etapa atual</span>
+            <strong id="trackedStep">Aguardando nova criacao.</strong>
+          </div>
 
-          <dl class="details">
-            <div>
-              <dt>Status</dt>
-              <dd id="trackedState">-</dd>
-            </div>
-            <div>
-              <dt>Repositorio</dt>
-              <dd id="trackedRepo">-</dd>
-            </div>
-            <div>
-              <dt>Modo</dt>
-              <dd id="trackedMode">-</dd>
-            </div>
-            <div>
-              <dt>ID</dt>
-              <dd id="trackedId">-</dd>
-            </div>
+          <dl class="status-data">
+            <div><dt>Status</dt><dd id="trackedState">-</dd></div>
+            <div><dt>Repositorio</dt><dd id="trackedRepo">-</dd></div>
+            <div><dt>Modo</dt><dd id="trackedMode">-</dd></div>
+            <div><dt>ID</dt><dd id="trackedId">-</dd></div>
           </dl>
 
-          <div class="step-box">
-            <span>Etapa atual</span>
-            <strong id="trackedStep">Nenhuma criacao selecionada.</strong>
-          </div>
-
-          <div class="tracker-actions">
+          <div class="status-actions">
             <a id="trackedUrl" class="repo-link is-disabled" target="_blank" rel="noreferrer">Abrir no GitHub</a>
-            <button type="button" class="button-secondary" id="stopTracking">Parar</button>
+            <button type="button" class="secondary" id="stopTracking">Parar</button>
           </div>
 
           <ol id="stepsList" class="steps">
@@ -130,27 +106,29 @@
         </aside>
       </section>
 
-      <section class="lower-grid">
-        <section class="surface">
-          <div class="section-head">
+      <section class="support-grid">
+        <section class="card">
+          <div class="card-header">
             <div>
-              <span class="label">Templates</span>
-              <h2>Repositorios disponiveis</h2>
+              <span class="eyebrow">Templates</span>
+              <h2>Disponiveis</h2>
             </div>
-            <button id="refreshTemplates" type="button" class="button-secondary">Atualizar</button>
+            <button id="refreshTemplates" type="button" class="secondary">Atualizar</button>
           </div>
           <div id="templatesList" class="template-list"></div>
         </section>
 
-        <section class="surface output-panel">
-          <div class="section-head">
+        <section class="card">
+          <div class="card-header">
             <div>
-              <span class="label">Retorno da API</span>
-              <h2>Ultima resposta</h2>
+              <span class="eyebrow">API</span>
+              <h2>Retornos</h2>
             </div>
           </div>
-          <pre id="resultBox" class="output">Aguardando acao.</pre>
-          <pre id="statusBox" class="output output-muted">Nenhum status consultado ainda.</pre>
+          <div class="logs">
+            <pre id="resultBox" class="output">Aguardando acao.</pre>
+            <pre id="statusBox" class="output">Nenhum status consultado ainda.</pre>
+          </div>
         </section>
       </section>
     </main>

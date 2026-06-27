@@ -22,3 +22,6 @@ build/
 
 .vscode/
 docker-build.log
+.codex/
+.memsearch/
+.agents/
