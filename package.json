@@ -1,5 +1,0 @@
-{
-  "name": "ms-github-manager",
-  "private": true,
-  "devDependencies": {"wrangler": "^4.68.0"}
-}

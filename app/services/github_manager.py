@@ -11,22 +11,10 @@ from typing import Literal
 
 import httpx
 
-try:
-    from github import Auth, Github
-    from github.GithubException import GithubException, UnknownObjectException
-except ImportError as exc:
-    Auth = Github = None
-    PYGITHUB_IMPORT_ERROR = exc
+from github import Auth, Github
+from github.GithubException import GithubException, UnknownObjectException
 
-    class GithubException(Exception):
-        pass
-
-    class UnknownObjectException(GithubException):
-        pass
-else:
-    PYGITHUB_IMPORT_ERROR = None
-
-from app.core.config import get_settings, settings
+from app.core.config import settings
 
 DEBUG = os.getenv("DEBUG_GITHUB_MANAGER", "").lower() in ("1", "true", "yes")
 logger = logging.getLogger(__name__)
@@ -66,25 +54,15 @@ class GitHubRepositoryManager:
     def __init__(self) -> None:
         self._creations: dict[str, CreationState] = {}
         self._lock = asyncio.Lock()
-
-    def _get_client(self) -> Github:
-        if PYGITHUB_IMPORT_ERROR is not None:
-            raise GitHubManagerError(
-                "PyGithub nao pode ser importado no runtime atual; verifique requests, urllib3, sockets e threads."
-            ) from PYGITHUB_IMPORT_ERROR
-        current = get_settings()
-        if not current.GH_TOKEN:
-            raise GitHubManagerError("GH_TOKEN ou GITHUB_TOKEN nao configurado.")
-        return Github(auth=Auth.Token(current.GH_TOKEN), timeout=current.GH_TIMEOUT_SECONDS)
+        if not settings.GH_TOKEN:
+            raise GitHubManagerError("GH_TOKEN ou GITHUB_TOKEN nao configurado no ambiente.")
+        self._client = Github(
+            auth=Auth.Token(settings.GH_TOKEN),
+            timeout=settings.GH_TIMEOUT_SECONDS,
+        )
 
     async def list_templates(self) -> list[TemplateResponse]:
-        try:
-            repos = await asyncio.to_thread(self._list_templates_sync)
-        except (OSError, RuntimeError) as exc:
-            logger.exception("PyGithub falhou no runtime Worker durante listagem de templates")
-            raise GitHubManagerError(
-                "PyGithub falhou no runtime atual; o erro pode envolver requests, urllib3, sockets ou asyncio.to_thread."
-            ) from exc
+        repos = await asyncio.to_thread(self._list_templates_sync)
         return [
             TemplateResponse(
                 name=repo.name,
@@ -263,8 +241,7 @@ class GitHubRepositoryManager:
 
     def _create_from_template_sync(self, payload: TemplateRepositoryCreateRequest):
         try:
-            client = self._get_client()
-            _, data = client.requester.requestJsonAndCheck(
+            _, data = self._client.requester.requestJsonAndCheck(
                 "POST",
                 f"/repos/{settings.GITHUB_ORG_LOGIN}/{payload.template_name}/generate",
                 input={
@@ -278,7 +255,7 @@ class GitHubRepositoryManager:
             repo_url = data["url"] if isinstance(data, dict) else None
             if not repo_url:
                 raise GitHubManagerError("Resposta invalida ao gerar repositorio por template.")
-            return client.get_repo(f"{settings.GITHUB_ORG_LOGIN}/{payload.name}")
+            return self._client.get_repo(f"{settings.GITHUB_ORG_LOGIN}/{payload.name}")
         except GithubException as exc:
             if getattr(exc, "status", None) == 404:
                 raise GitHubManagerError(
@@ -1428,13 +1405,13 @@ temp/
 
     def _org(self):
         try:
-            return self._get_client().get_organization(settings.GITHUB_ORG_LOGIN)
+            return self._client.get_organization(settings.GITHUB_ORG_LOGIN)
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
     def _repo(self, repository_name: str):
         try:
-            return self._get_client().get_repo(f"{settings.GITHUB_ORG_LOGIN}/{repository_name}")
+            return self._client.get_repo(f"{settings.GITHUB_ORG_LOGIN}/{repository_name}")
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
