@@ -1,4 +1,5 @@
 import os
+from contextvars import ContextVar
 
 from dotenv import load_dotenv
 
@@ -22,3 +23,18 @@ class Settings:
 
 
 settings = Settings()
+
+_request_settings: ContextVar[Settings | None] = ContextVar("request_settings", default=None)
+
+
+def get_settings() -> Settings:
+    return _request_settings.get() or settings
+
+
+def set_worker_settings(env) -> None:
+    values = {name: getattr(env, name) for name in dir(env) if name.isupper() and hasattr(env, name)}
+    current = Settings()
+    for name, value in values.items():
+        if hasattr(current, name) and value is not None:
+            setattr(current, name, value)
+    _request_settings.set(current)

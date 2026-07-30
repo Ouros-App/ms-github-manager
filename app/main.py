@@ -1,12 +1,7 @@
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-
+from fastapi import Request
 from app.api.routes import router
-from app.core.config import settings
-from pathlib import Path
-
-STATIC_DIR = Path(__file__).resolve().parent / "static"
-
+from app.core.config import set_worker_settings, settings
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.DESCRIPTION,
@@ -27,4 +22,11 @@ app = FastAPI(
 )
 
 app.include_router(router)
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def load_worker_settings(request: Request, call_next):
+    env = request.scope.get("env")
+    if env is not None:
+        set_worker_settings(env)
+    return await call_next(request)

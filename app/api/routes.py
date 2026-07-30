@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, RedirectResponse
 
-from app.core.config import settings
+from app.core.config import get_settings, settings
 from app.schemas.common import HealthResponse, MessageResponse
 from app.schemas.github import (
     BareRepositoryCreateRequest,
@@ -51,12 +51,13 @@ async def read_app() -> RedirectResponse:
     summary="Health check",
 )
 async def health_check() -> HealthResponse:
+    current = get_settings()
     return HealthResponse(
         status="ok",
-        service=settings.PROJECT_NAME,
-        version=settings.VERSION,
-        organization=settings.GITHUB_ORG_LOGIN,
-        default_branch=settings.DEFAULT_BRANCH,
+        service=current.PROJECT_NAME,
+        version=current.VERSION,
+        organization=current.GITHUB_ORG_LOGIN,
+        default_branch=current.DEFAULT_BRANCH,
     )
 
 
