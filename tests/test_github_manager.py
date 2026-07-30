@@ -6,6 +6,7 @@ import pytest
 from app.schemas.github import (
     BareRepositoryCreateRequest,
     TemplateRepositoryCreateRequest,
+    TemplateResponse,
 )
 
 
@@ -126,3 +127,81 @@ def test_template_creation_flow(manager, template_name):
         assert (await manager.get_creation_status(state.creation_id)).status == "done"
 
     asyncio.run(run())
+
+
+class Item:
+    def __init__(self, path, content="", item_type="file"):
+        self.path = path
+        self.sha = "sha"
+        self.type = item_type
+        self.decoded_content = content.encode()
+
+
+def test_repository_file_operations(manager):
+    from github.GithubException import UnknownObjectException
+
+    calls = []
+
+    class Repo:
+        def get_contents(self, path, ref=None):
+            if path == "missing.txt":
+                raise UnknownObjectException(404, {"message": "Not Found"}, None)
+            return Item(path)
+
+        def update_file(self, *args, **kwargs):
+            calls.append(("update", args, kwargs))
+
+        def create_file(self, *args, **kwargs):
+            calls.append(("create", args, kwargs))
+
+        def delete_file(self, *args, **kwargs):
+            calls.append(("delete", args, kwargs))
+
+    manager._repo = lambda _: Repo()
+    manager._put_file_sync("orders", "exists.txt", "content", "update")
+    manager._put_file_sync("orders", "missing.txt", "content", "create")
+    manager._delete_path_sync("orders", "exists.txt")
+
+    assert [call[0] for call in calls] == ["update", "create", "delete"]
+
+
+def test_repository_readiness_and_template_validation(manager):
+    class Branch:
+        commit = SimpleNamespace(sha="commit")
+
+        def edit_protection(self, **kwargs):
+            self.protection = kwargs
+
+    class Repo:
+        def __init__(self):
+            self.branch = Branch()
+            self.raw_data = {"is_template": True}
+
+        def get_branch(self, _):
+            return self.branch
+
+        def get_commit(self, _):
+            return None
+
+        def get_contents(self, _, ref=None):
+            return Item("path")
+
+    repo = Repo()
+    manager._repo = lambda _: repo
+    manager._wait_until_repository_ready_sync("orders")
+    manager._wait_until_paths_exist_sync("orders", ["path"])
+    manager._protect_main_branch_sync("orders")
+
+    async def run():
+        manager.list_templates = lambda: asyncio.sleep(0, result=[TemplateResponse(name="template", private=True, url="url")])
+        await manager._assert_template_exists("template")
+
+    asyncio.run(run())
+    assert repo.branch.protection["required_approving_review_count"] == 1
+
+
+def test_android_template_helpers(manager):
+    content = "pluginManagement { repositories { google() } }\nrootProject.name = \"app\"\n"
+
+    assert manager._block_content("block { value }", "block") == " value "
+    assert manager._insert_after_plugin_management(content, "value\n").endswith('value\nrootProject.name = "app"\n')
