@@ -908,7 +908,7 @@ class ExampleUnitTest {{
         return f"com.ourosapp.{normalized}"
 
     def _android_app_name(self, repository_name: str) -> str:
-        normalized = re.sub(self._TEMPLATE_SUFFIX_PATTERN, "", repository_name)
+        normalized = re.sub(self._TEMPLATE_SUFFIX_PATTERN, "", repository_name, flags=re.IGNORECASE)
         normalized = re.sub(r"[-_.]+", " ", normalized).strip()
         return normalized or "Ouros App"
 
