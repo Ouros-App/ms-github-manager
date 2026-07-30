@@ -3,7 +3,16 @@
   "name": "ms-github-manager",
   "main": "worker.py",
   "compatibility_date": "2026-07-30",
-  "compatibility_flags": ["python_workers"],
-  "observability": {"enabled": true},
-  "python_modules": {"excludes": ["**/*.pyc", "**/**pycache**"]}
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "python_modules": {
+    "excludes": [
+      "**/*.pyc",
+      "**/__pycache__"
+    ]
+  }
 }

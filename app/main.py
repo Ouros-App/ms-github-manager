@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi import Request
 from app.api.routes import router
-from app.core.config import set_worker_settings, settings
+from app.core.config import reset_worker_settings, set_worker_settings, settings
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.DESCRIPTION,
@@ -27,6 +27,10 @@ app.include_router(router)
 @app.middleware("http")
 async def load_worker_settings(request: Request, call_next):
     env = request.scope.get("env")
-    if env is not None:
-        set_worker_settings(env)
-    return await call_next(request)
+    if env is None:
+        return await call_next(request)
+    token = set_worker_settings(env)
+    try:
+        return await call_next(request)
+    finally:
+        reset_worker_settings(token)
