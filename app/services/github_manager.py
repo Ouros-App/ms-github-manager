@@ -105,6 +105,13 @@ class GitHubRepositoryManager:
         creation_id: str,
         payload: BareRepositoryCreateRequest,
     ) -> None:
+        """
+        Create a repository and apply language-specific scaffolding, CI/CD configuration, and branch protection.
+        
+        Parameters:
+            creation_id (str): Identifier of the tracked repository creation operation.
+            payload (BareRepositoryCreateRequest): Repository name and configuration, including the target language.
+        """
         try:
             await self._mark_running(creation_id)
             await self._step(creation_id, "Criando repositorio cru")
@@ -153,6 +160,15 @@ class GitHubRepositoryManager:
         creation_id: str,
         payload: TemplateRepositoryCreateRequest,
     ) -> None:
+        """
+        Create and configure a repository from a validated GitHub template.
+        
+        Parameters:
+            creation_id (str): Identifier of the tracked repository creation.
+            payload (TemplateRepositoryCreateRequest): Template and repository configuration.
+        
+        The creation state is marked as failed if any workflow step raises an exception.
+        """
         try:
             await self._mark_running(creation_id)
             await self._assert_template_exists(payload.template_name)
@@ -205,6 +221,14 @@ class GitHubRepositoryManager:
             await self._mark_failed(creation_id, str(exc))
 
     async def _assert_template_exists(self, template_name: str) -> None:
+        """Validate that a repository exists in the configured organization and is marked as a GitHub template.
+        
+        Parameters:
+        	template_name (str): Name of the repository to validate.
+        
+        Raises:
+        	ValueError: If the repository is unavailable among the configured templates or is not marked as a template.
+        """
         templates = await self.list_templates()
         if template_name not in {template.name for template in templates}:
             raise ValueError(
@@ -266,6 +290,9 @@ class GitHubRepositoryManager:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
     def _put_workflow_sync(self, repository_name: str, language: str) -> None:
+        """\
+        Write the language-specific CI/CD workflow to the repository.
+        """
         workflow_content = self._workflow(language)
         if DEBUG:
             logger.debug(f"[_put_workflow_sync] repo={repository_name} language={language} workflow_path={self._WORKFLOW_DIR / f'{language}.yml'} exists={(self._WORKFLOW_DIR / f'{language}.yml').exists()} content_len={len(workflow_content)}")
@@ -325,6 +352,11 @@ class GitHubRepositoryManager:
             )
 
     def _clear_springboot_template_structure_sync(self, repository_name: str) -> None:
+        """Remove existing Spring Boot template files and directories from a repository.
+        
+        Parameters:
+        	repository_name (str): Name of the repository to modify.
+        """
         for path in (
             "src",
             "src/main/resources/application.properties",
@@ -333,6 +365,15 @@ class GitHubRepositoryManager:
             self._delete_path_sync(repository_name, path)
 
     def _create_sonar_properties_sync(self, repository_name: str) -> str:
+        """
+        Generate SonarQube project configuration for a repository.
+        
+        Parameters:
+        	repository_name (str): Name of the repository.
+        
+        Returns:
+        	str: SonarQube properties content configured for the repository.
+        """
         project_key = f"{settings.GITHUB_ORG_LOGIN}_{repository_name}"
         return f"""sonar.organization={settings.GITHUB_ORG_LOGIN.lower()}
 sonar.projectKey={project_key}
@@ -355,6 +396,15 @@ sonar.sourceEncoding=UTF-8
         )
 
     def _create_sonarcloud_project_sync(self, repository_name: str) -> None:
+        """
+        Create a public SonarCloud project for a repository when SonarCloud integration is configured.
+        
+        Parameters:
+        	repository_name (str): Name of the GitHub repository used to identify the SonarCloud project.
+        
+        Raises:
+        	GitHubManagerError: If the SonarCloud request fails or returns an unexpected status.
+        """
         if not settings.SONAR_CLOUD_TOKEN:
             if DEBUG:
                 logger.debug("[_create_sonarcloud_project_sync] SONAR_CLOUD_TOKEN not set, skipping")
@@ -581,6 +631,14 @@ android.nonTransitiveRClass=true
 """
 
     def _android_app_build_gradle(self, namespace: str) -> str:
+        """Generate the Android app module Gradle configuration for the specified namespace.
+        
+        Parameters:
+            namespace (str): The Android package namespace and application ID.
+        
+        Returns:
+            str: The Kotlin DSL Gradle configuration for the Android app module.
+        """
         return f"""plugins {{
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -629,6 +687,13 @@ dependencies {{
 """
 
     def _android_manifest(self, namespace: str, app_name: str) -> str:
+        """
+        Generate the Android application manifest.
+        
+        Parameters:
+        	namespace (str): The application namespace.
+        	app_name (str): The application name.
+        """
         return """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
@@ -948,6 +1013,18 @@ class ExampleUnitTest {{
         content: str,
         message: str,
     ) -> None:
+        """
+        Create or update a file in a repository's default branch.
+        
+        Parameters:
+            repository_name (str): Name of the target repository.
+            path (str): Repository path for the file.
+            content (str): File content.
+            message (str): Commit message for the change.
+        
+        Raises:
+            GitHubManagerError: If the GitHub operation fails.
+        """
         repo = self._repo(repository_name)
         if DEBUG:
             logger.debug(f"[_put_file_sync] repo={repository_name} path={path} content_len={len(content)}")
@@ -1142,6 +1219,14 @@ class ExampleUnitTest {{
         return templates.get(language)
 
     def _template_language(self, template_name: str) -> str:
+        """Determine the language category associated with a repository template name.
+        
+        Parameters:
+        	template_name (str): The template repository name to classify.
+        
+        Returns:
+        	str: The detected language category, or `"generic"` when no category matches.
+        """
         normalized_name = template_name.lower()
         if DEBUG:
             logger.debug(f"[_template_language] template_name={template_name} normalized={normalized_name}")
@@ -1175,6 +1260,7 @@ class ExampleUnitTest {{
         return "generic"
 
     def _put_postgres_scaffold_sync(self, repository_name: str) -> None:
+        """Create the PostgreSQL project scaffold in the specified repository."""
         files = {
             "README.md": self._postgres_readme(repository_name),
             "config.yaml": self._postgres_config_yaml(repository_name),
