@@ -25,3 +25,21 @@ def test_postgres_template_requires_database_suffix():
 def test_non_postgres_template_allows_regular_name():
     request = TemplateRepositoryCreateRequest(name="orders", template_name="ms-fastapi-template")
     assert request.name == "orders"
+
+
+@pytest.mark.parametrize(
+    ("template_name", "expected"),
+    [
+        ("ms-react-template", "frontend"),
+        ("ms-spring-template", "springboot"),
+        ("ms-android-template", "android"),
+        ("ms-fastapi-template", "fastapi"),
+        ("ms-postgres-template", "postgres"),
+        ("ms-generic-template", "generic"),
+    ],
+)
+def test_template_language(monkeypatch, template_name, expected):
+    monkeypatch.setenv("GH_TOKEN", "test")
+    from app.services.github_manager import GitHubRepositoryManager
+
+    assert GitHubRepositoryManager()._template_language(template_name) == expected

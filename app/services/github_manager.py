@@ -49,6 +49,15 @@ class CreationState:
 class GitHubRepositoryManager:
     _WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "templates" / "workflows"
     _REPOSITORY_READY_INTERVAL_SECONDS = 2
+    _README_PATH = "README.md"
+    _TEMPLATE_SUFFIX_PATTERN = r"[-_.]?template$"
+    _TEMPLATE_KEYWORDS = (
+        ("frontend", ("frontend", "react", "vite", "typescript")),
+        ("springboot", ("spring", "java")),
+        ("android", ("android", "kotlin", "mobile")),
+        ("fastapi", ("fastapi",)),
+        ("postgres", ("postgres", "postgresql", "migration", "db")),
+    )
 
     def __init__(self) -> None:
         self._creations: dict[str, CreationState] = {}
@@ -286,7 +295,7 @@ class GitHubRepositoryManager:
         package_path = package_name.replace(".", "/")
         application_class_name = self._springboot_application_class_name(repository_name)
         files = {
-            "README.md": (
+            self._README_PATH: (
                 f"# {repository_name}\n\n"
                 "Projeto inicial Spring REST API com Gradle.\n\n"
                 "## Comandos\n\n"
@@ -308,9 +317,7 @@ class GitHubRepositoryManager:
                 package_name
             ),
             "src/main/resources/application.properties": self._springboot_application_properties(application_name),
-            "src/main/resources/application-local.properties": self._springboot_application_local_properties(
-                application_name
-            ),
+            "src/main/resources/application-local.properties": self._springboot_application_properties(application_name),
             f"src/test/java/{package_path}/{application_class_name}Tests.java": self._springboot_application_tests_java(
                 package_name,
                 application_class_name,
@@ -483,11 +490,6 @@ public class HealthController {
 server.port=${{SERVER_PORT:8080}}
 """
 
-    def _springboot_application_local_properties(self, application_name: str) -> str:
-        return f"""spring.application.name={application_name}
-server.port=${{SERVER_PORT:8080}}
-"""
-
     def _springboot_application_tests_java(self, package_name: str, class_name: str) -> str:
         return """package PACKAGE_NAME;
 
@@ -507,12 +509,12 @@ class CLASS_NAMETests {
         namespace = self._android_namespace(repository_name)
         app_name = self._android_app_name(repository_name)
         files = {
-            "README.md": self._android_readme(repository_name),
+            self._README_PATH: self._android_readme(repository_name),
             "settings.gradle.kts": self._android_settings_gradle(repository_name),
             "build.gradle.kts": self._android_root_build_gradle(),
             "gradle.properties": self._android_gradle_properties(),
             "app/build.gradle.kts": self._android_app_build_gradle(namespace),
-            "app/src/main/AndroidManifest.xml": self._android_manifest(namespace, app_name),
+            "app/src/main/AndroidManifest.xml": self._android_manifest(),
             "app/proguard-rules.pro": "",
             "app/src/main/java/{}/MainActivity.kt".format(namespace.replace(".", "/")): self._android_main_activity(
                 namespace
@@ -628,7 +630,7 @@ dependencies {{
 }}
 """
 
-    def _android_manifest(self, namespace: str, app_name: str) -> str:
+    def _android_manifest(self) -> str:
         return """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
@@ -897,7 +899,7 @@ class ExampleUnitTest {{
         return value
 
     def _android_namespace(self, repository_name: str) -> str:
-        normalized = re.sub(r"[-_.]?template$", "", repository_name.lower())
+        normalized = re.sub(self._TEMPLATE_SUFFIX_PATTERN, "", repository_name.lower())
         normalized = re.sub(r"[^a-z0-9]+", "", normalized)
         if not normalized:
             normalized = "app"
@@ -906,7 +908,7 @@ class ExampleUnitTest {{
         return f"com.ourosapp.{normalized}"
 
     def _android_app_name(self, repository_name: str) -> str:
-        normalized = re.sub(r"[-_.]?template$", "", repository_name)
+        normalized = re.sub(self._TEMPLATE_SUFFIX_PATTERN, "", repository_name)
         normalized = re.sub(r"[-_.]+", " ", normalized).strip()
         return normalized or "Ouros App"
 
@@ -928,7 +930,7 @@ class ExampleUnitTest {{
 
     def _springboot_application_name(self, repository_name: str) -> str:
         normalized = re.sub(r"^ms[-_.]?", "", repository_name.lower())
-        normalized = re.sub(r"[-_.]?template$", "", normalized)
+        normalized = re.sub(self._TEMPLATE_SUFFIX_PATTERN, "", normalized)
         normalized = re.sub(r"[^a-z0-9-]+", "-", normalized)
         normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
         return normalized or "app"
@@ -1145,38 +1147,18 @@ class ExampleUnitTest {{
         normalized_name = template_name.lower()
         if DEBUG:
             logger.debug(f"[_template_language] template_name={template_name} normalized={normalized_name}")
-        if (
-            "frontend" in normalized_name
-            or "react" in normalized_name
-            or "vite" in normalized_name
-            or "typescript" in normalized_name
-        ):
-            if DEBUG:
-                logger.debug("[_template_language] detected: frontend")
-            return "frontend"
-        if "spring" in normalized_name or "java" in normalized_name:
-            if DEBUG:
-                logger.debug("[_template_language] detected: springboot")
-            return "springboot"
-        if "android" in normalized_name or "kotlin" in normalized_name or "mobile" in normalized_name:
-            if DEBUG:
-                logger.debug("[_template_language] detected: android")
-            return "android"
-        if "fastapi" in normalized_name:
-            if DEBUG:
-                logger.debug("[_template_language] detected: fastapi")
-            return "fastapi"
-        if "postgres" in normalized_name or "postgresql" in normalized_name or "migration" in normalized_name or "db" in normalized_name:
-            if DEBUG:
-                logger.debug("[_template_language] detected: postgres")
-            return "postgres"
+        for language, keywords in self._TEMPLATE_KEYWORDS:
+            if any(keyword in normalized_name for keyword in keywords):
+                if DEBUG:
+                    logger.debug("[_template_language] detected: %s", language)
+                return language
         if DEBUG:
             logger.debug("[_template_language] detected: generic")
         return "generic"
 
     def _put_postgres_scaffold_sync(self, repository_name: str) -> None:
         files = {
-            "README.md": self._postgres_readme(repository_name),
+            self._README_PATH: self._postgres_readme(repository_name),
             "config.yaml": self._postgres_config_yaml(repository_name),
             ".env.example": self._postgres_env_example(),
             "requirements.txt": self._postgres_requirements_txt(),
@@ -1363,7 +1345,7 @@ if __name__ == "__main__":
 
     def _postgres_app_name(self, repository_name: str) -> str:
         normalized = re.sub(r"^ms-", "", repository_name, flags=re.IGNORECASE)
-        normalized = re.sub(r"[-_.]?template$", "", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(self._TEMPLATE_SUFFIX_PATTERN, "", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"[^A-Za-z0-9]+", " ", normalized).strip()
         return normalized or "postgres"
 
