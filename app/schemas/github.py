@@ -3,7 +3,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-
 RepositoryVisibility = Literal["private", "public", "internal"]
 RepositoryLanguage = Literal["generic", "frontend", "springboot", "fastapi", "android", "postgres"]
 CreationStatusValue = Literal["queued", "running", "done", "failed"]

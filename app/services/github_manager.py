@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-
 from github import Auth, Github
 from github.GithubException import GithubException, UnknownObjectException
 
@@ -146,7 +145,7 @@ class GitHubRepositoryManager:
                 await asyncio.to_thread(self._create_sonarcloud_project_sync, repo.name)
 
             await self._mark_succeeded(creation_id, repo.html_url)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             await self._mark_failed(creation_id, str(exc))
 
     async def _create_repository_from_template(
@@ -202,7 +201,7 @@ class GitHubRepositoryManager:
                 await asyncio.to_thread(self._create_sonarcloud_project_sync, repo.name)
 
             await self._mark_succeeded(creation_id, repo.html_url)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             await self._mark_failed(creation_id, str(exc))
 
     async def _assert_template_exists(self, template_name: str) -> None:
@@ -271,9 +270,9 @@ class GitHubRepositoryManager:
         if DEBUG:
             logger.debug(f"[_put_workflow_sync] repo={repository_name} language={language} workflow_path={self._WORKFLOW_DIR / f'{language}.yml'} exists={(self._WORKFLOW_DIR / f'{language}.yml').exists()} content_len={len(workflow_content)}")
             if "Disable Automatic Analysis" in workflow_content:
-                logger.debug(f"[_put_workflow_sync] Workflow CONTAINS 'Disable Automatic Analysis' step")
+                logger.debug("[_put_workflow_sync] Workflow CONTAINS 'Disable Automatic Analysis' step")
             else:
-                logger.debug(f"[_put_workflow_sync] Workflow MISSING 'Disable Automatic Analysis' step!")
+                logger.debug("[_put_workflow_sync] Workflow MISSING 'Disable Automatic Analysis' step!")
         self._put_file_sync(
             repository_name,
             ".github/workflows/ci-cd.yml",
@@ -334,7 +333,6 @@ class GitHubRepositoryManager:
             self._delete_path_sync(repository_name, path)
 
     def _create_sonar_properties_sync(self, repository_name: str) -> str:
-        application_name = self._springboot_application_name(repository_name)
         project_key = f"{settings.GITHUB_ORG_LOGIN}_{repository_name}"
         return f"""sonar.organization={settings.GITHUB_ORG_LOGIN.lower()}
 sonar.projectKey={project_key}
@@ -359,7 +357,7 @@ sonar.sourceEncoding=UTF-8
     def _create_sonarcloud_project_sync(self, repository_name: str) -> None:
         if not settings.SONAR_CLOUD_TOKEN:
             if DEBUG:
-                logger.debug(f"[_create_sonarcloud_project_sync] SONAR_CLOUD_TOKEN not set, skipping")
+                logger.debug("[_create_sonarcloud_project_sync] SONAR_CLOUD_TOKEN not set, skipping")
             return
         project_key = f"{settings.GITHUB_ORG_LOGIN}_{repository_name}"
         org = settings.GITHUB_ORG_LOGIN.lower()
@@ -631,7 +629,7 @@ dependencies {{
 """
 
     def _android_manifest(self, namespace: str, app_name: str) -> str:
-        return f"""<?xml version="1.0" encoding="utf-8"?>
+        return """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="true"
@@ -965,10 +963,10 @@ class ExampleUnitTest {{
                 branch=settings.DEFAULT_BRANCH,
             )
             if DEBUG:
-                logger.debug(f"[_put_file_sync] File UPDATED successfully")
+                logger.debug("[_put_file_sync] File UPDATED successfully")
         except UnknownObjectException:
             if DEBUG:
-                logger.debug(f"[_put_file_sync] File NOT FOUND, creating...")
+                logger.debug("[_put_file_sync] File NOT FOUND, creating...")
             try:
                 repo.create_file(
                     path=path,
@@ -977,7 +975,7 @@ class ExampleUnitTest {{
                     branch=settings.DEFAULT_BRANCH,
                 )
                 if DEBUG:
-                    logger.debug(f"[_put_file_sync] File CREATED successfully")
+                    logger.debug("[_put_file_sync] File CREATED successfully")
             except GithubException as exc:
                 raise GitHubManagerError(self._format_github_error(exc)) from exc
         except GithubException as exc:
@@ -1154,26 +1152,26 @@ class ExampleUnitTest {{
             or "typescript" in normalized_name
         ):
             if DEBUG:
-                logger.debug(f"[_template_language] detected: frontend")
+                logger.debug("[_template_language] detected: frontend")
             return "frontend"
         if "spring" in normalized_name or "java" in normalized_name:
             if DEBUG:
-                logger.debug(f"[_template_language] detected: springboot")
+                logger.debug("[_template_language] detected: springboot")
             return "springboot"
         if "android" in normalized_name or "kotlin" in normalized_name or "mobile" in normalized_name:
             if DEBUG:
-                logger.debug(f"[_template_language] detected: android")
+                logger.debug("[_template_language] detected: android")
             return "android"
         if "fastapi" in normalized_name:
             if DEBUG:
-                logger.debug(f"[_template_language] detected: fastapi")
+                logger.debug("[_template_language] detected: fastapi")
             return "fastapi"
         if "postgres" in normalized_name or "postgresql" in normalized_name or "migration" in normalized_name or "db" in normalized_name:
             if DEBUG:
-                logger.debug(f"[_template_language] detected: postgres")
+                logger.debug("[_template_language] detected: postgres")
             return "postgres"
         if DEBUG:
-            logger.debug(f"[_template_language] detected: generic")
+            logger.debug("[_template_language] detected: generic")
         return "generic"
 
     def _put_postgres_scaffold_sync(self, repository_name: str) -> None:
