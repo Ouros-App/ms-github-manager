@@ -41,8 +41,9 @@ jobs:
         run: |
           test -f README.md
           test -f config.yaml
-          test -f scripts/migrate.py
-          test -f migrations/V1__init.sql
+          test -f requirements.txt
+          test -f scripts/apply_sql.py
+          test -f sql/versionamento.sql
 
   sql:
     name: sql
@@ -54,19 +55,16 @@ jobs:
 
       - name: Validate migration naming
         run: |
-          find migrations -type f -name 'V*__*.sql' | sort | grep -q .
-          if find migrations -type f -name '*.sql' | grep -Ev '/V[0-9]+__[^/]+\.sql$' | grep -q .; then
-            echo "Invalid migration naming"
-            exit 1
-          fi
+          find sql -type f -name '*.sql' | sort | grep -q .
+          grep -Eq '^[[:space:]]*-[[:space:]]+[A-Za-z0-9_.-]+\.sql$' config.yaml
 
       - name: Validate idempotent SQL markers
         run: |
-          if grep -RInE '\b(INSERT|UPDATE|DELETE|DROP DATABASE)\b' migrations; then
+          if grep -RInE '\b(INSERT|UPDATE|DELETE|DROP DATABASE)\b' sql; then
             echo "DML or forbidden statement found"
             exit 1
           fi
-          if ! grep -RInE 'IF NOT EXISTS|IF EXISTS' migrations; then
+          if ! grep -RInE 'IF NOT EXISTS|IF EXISTS' sql; then
             echo "Missing idempotent guard"
             exit 1
           fi

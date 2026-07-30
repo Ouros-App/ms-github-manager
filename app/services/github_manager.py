@@ -1182,8 +1182,8 @@ class ExampleUnitTest {{
             "config.yaml": self._postgres_config_yaml(repository_name),
             ".env.example": self._postgres_env_example(),
             "requirements.txt": self._postgres_requirements_txt(),
-            "scripts/migrate.py": self._postgres_migrate_py(),
-            "migrations/V1__init.sql": self._postgres_initial_migration(),
+            "scripts/apply_sql.py": self._postgres_apply_sql_py(),
+            "sql/versionamento.sql": self._postgres_versioning_sql(),
         }
         for path, content in files.items():
             self._put_file_sync(repository_name, path, content, f"Add PostgreSQL template file: {path}")
@@ -1192,29 +1192,42 @@ class ExampleUnitTest {{
         app_name = self._postgres_app_name(repository_name)
         return f"""# {app_name}
 
-Template para migrações PostgreSQL versionadas em GitHub.
+Template para banco PostgreSQL versionado por arquivos SQL locais.
 
 ## Estrutura
 
-- `migrations/`: scripts SQL numerados no formato `V1__descricao.sql`
-- `scripts/migrate.py`: orquestrador local das migrações
-- `config.yaml`: configuração do ambiente
-- `.env.example`: variáveis sensíveis
+- `sql/`: arquivos SQL
+- `scripts/apply_sql.py`: orquestrador local
+- `config.yaml`: ordem de execucao e configuracao
+- `.env.example`: variaveis sensiveis
 
-## Convenções
+## Uso
 
-- scripts apenas de DDL
-- scripts idempotentes
-- execução sequencial por versão
-- transação por arquivo
+```bash
+pip install -r requirements.txt
+python scripts/apply_sql.py
+```
 """
 
     def _postgres_config_yaml(self, repository_name: str) -> str:
         return f"""project: {repository_name}
 database:
   engine: postgresql
-  migrations_path: migrations
-  control_table: controle_versoes
+  host: ${{POSTGRES_HOST}}
+  port: ${{POSTGRES_PORT}}
+  name: ${{POSTGRES_DB}}
+  bootstrap:
+    db: ${{POSTGRES_ROOT_DB}}
+    user: ${{POSTGRES_ROOT_USER}}
+    password: ${{POSTGRES_ROOT_PASSWORD}}
+  owner:
+    user: ${{POSTGRES_USER}}
+    password: ${{POSTGRES_PASSWORD}}
+  sql_path: sql
+  version_table: controle_versoes
+  version_schema_file: versionamento.sql
+  execution_order:
+    - versionamento.sql
 """
 
     def _postgres_env_example(self) -> str:
@@ -1223,36 +1236,129 @@ POSTGRES_PORT=5432
 POSTGRES_DB=app
 POSTGRES_USER=app
 POSTGRES_PASSWORD=app
-GITHUB_TOKEN=
-GITHUB_REPOSITORY=
+POSTGRES_ROOT_DB=root_db
+POSTGRES_ROOT_USER=ouros_root
+POSTGRES_ROOT_PASSWORD=senha-para-root
 """
 
     def _postgres_requirements_txt(self) -> str:
         return """psycopg2-binary==2.9.9
 PyYAML==6.0.2
 python-dotenv==1.0.1
-requests==2.32.3
 """
 
-    def _postgres_migrate_py(self) -> str:
+    def _postgres_apply_sql_py(self) -> str:
         return """#!/usr/bin/env python3
+import os
+import re
+import subprocess
 from pathlib import Path
+
+import psycopg2
+import yaml
+from dotenv import load_dotenv
+
+
+ENV_RE = re.compile(r"\\$\\{([A-Z0-9_]+)\\}")
+
+
+def qident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def load_config(root: Path) -> dict:
+    raw = (root / "config.yaml").read_text(encoding="utf-8")
+    raw = ENV_RE.sub(lambda m: os.getenv(m.group(1), ""), raw)
+    return yaml.safe_load(raw)
+
+
+def git_value(root: Path, *args: str) -> str:
+    res = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
+    return res.stdout.strip() if res.returncode == 0 else "unknown"
+
+
+def connect(cfg: dict, dbname: str, user: str, password: str):
+    db = cfg["database"]
+    return psycopg2.connect(host=db["host"], port=db["port"], dbname=dbname, user=user, password=password)
+
+
+def ensure_database(cfg: dict) -> None:
+    db = cfg["database"]
+    boot = db["bootstrap"]
+    owner = db["owner"]
+    conn = connect(cfg, boot["db"], boot["user"], boot["password"])
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (owner["user"],))
+            if cur.fetchone() is None:
+                cur.execute(f"CREATE ROLE {qident(owner['user'])} LOGIN PASSWORD %s", (owner["password"],))
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db["name"],))
+            if cur.fetchone() is None:
+                cur.execute(f"CREATE DATABASE {qident(db['name'])} OWNER {qident(owner['user'])}")
+    finally:
+        conn.close()
+
+
+def ensure_version_table(cur, root: Path, cfg: dict) -> None:
+    db = cfg["database"]
+    path = root / db["sql_path"] / db["version_schema_file"]
+    if not path.is_file():
+        raise FileNotFoundError(f"SQL de versionamento nao encontrado: {path}")
+    cur.execute(path.read_text(encoding="utf-8"))
+
+
+def next_version(cur, table: str) -> int:
+    cur.execute(f"SELECT COALESCE(MAX(versao), 0) + 1 FROM {qident(table)}")
+    return int(cur.fetchone()[0])
+
+
+def apply_sql_files(root: Path, cfg: dict, cur) -> None:
+    db = cfg["database"]
+    sql_dir = root / db["sql_path"]
+    for name in db["execution_order"]:
+        path = sql_dir / name
+        if not path.is_file():
+            raise FileNotFoundError(f"SQL nao encontrado: {path}")
+        cur.execute(path.read_text(encoding="utf-8"))
 
 
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
-    print(f"PostgreSQL migrations scaffold at {root}")
+    load_dotenv(root / ".env")
+    cfg = load_config(root)
+    db = cfg["database"]
+    table = db["version_table"]
+    commit_id = os.getenv("GITHUB_SHA") or git_value(root, "rev-parse", "HEAD")
+    commit_msg = os.getenv("GITHUB_COMMIT_MESSAGE") or git_value(root, "log", "-1", "--pretty=%B")
+    if commit_id == "unknown":
+        raise RuntimeError("Nao foi possivel identificar o commit atual.")
+    ensure_database(cfg)
+    conn = connect(cfg, db["name"], db["owner"]["user"], db["owner"]["password"])
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                ensure_version_table(cur, root, cfg)
+                apply_sql_files(root, cfg, cur)
+                cur.execute(
+                    f"INSERT INTO {qident(table)} (versao, commit_id, comentario_commit) VALUES (%s, %s, %s)",
+                    (next_version(cur, table), commit_id, commit_msg),
+                )
+        print(f"SQL aplicado no banco {db['name']} e versao registrada para commit {commit_id}")
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
     main()
 """
 
-    def _postgres_initial_migration(self) -> str:
-        return """-- V1__init.sql
-CREATE TABLE IF NOT EXISTS controle_versoes (
+    def _postgres_versioning_sql(self) -> str:
+        return """CREATE TABLE IF NOT EXISTS controle_versoes (
     id SERIAL PRIMARY KEY,
-    versao VARCHAR(50) UNIQUE NOT NULL,
+    versao INTEGER UNIQUE NOT NULL,
+    commit_id VARCHAR(64) NOT NULL,
+    comentario_commit TEXT NOT NULL,
     aplicado_em TIMESTAMP DEFAULT NOW()
 );
 """
