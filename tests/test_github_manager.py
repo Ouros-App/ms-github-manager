@@ -205,3 +205,94 @@ def test_android_template_helpers(manager):
 
     assert manager._block_content("block { value }", "block") == " value "
     assert manager._insert_after_plugin_management(content, "value\n").endswith('value\nrootProject.name = "app"\n')
+
+
+def test_github_creation_helpers(manager):
+    created = {}
+
+    class Org:
+        def get_repos(self, **kwargs):
+            created["repos"] = kwargs
+            return [SimpleNamespace(name="api-template", description=None, private=True, html_url="url")]
+
+        def create_repo(self, **kwargs):
+            created["repo"] = kwargs
+            return SimpleNamespace(name=kwargs["name"])
+
+    class Requester:
+        def requestJsonAndCheck(self, method, path, input):
+            created["request"] = (method, path, input)
+            return None, {"url": "https://api.github.test/repos/Ouros-App/orders"}
+
+    manager._org = lambda: Org()
+    manager._client = SimpleNamespace(
+        requester=Requester(),
+        get_repo=lambda _: SimpleNamespace(name="orders"),
+    )
+
+    assert len(manager._list_templates_sync()) == 1
+    manager._create_bare_repository_sync(BareRepositoryCreateRequest(name="orders", language="fastapi"))
+    manager._create_from_template_sync(TemplateRepositoryCreateRequest(name="orders", template_name="api-template"))
+
+    assert created["repo"]["gitignore_template"] == "Python"
+    assert created["request"][0] == "POST"
+
+
+def test_workflow_polling_and_creation_state(manager):
+    from github.GithubException import UnknownObjectException
+
+    written = []
+    manager._put_file_sync = lambda *args: written.append(args)
+    manager._put_workflow_sync("orders", "fastapi")
+
+    class Repo:
+        def get_contents(self, *_args, **_kwargs):
+            raise UnknownObjectException(404, {"message": "Not Found"}, None)
+
+    manager._repo = lambda _: Repo()
+    manager._wait_until_paths_absent_sync("orders", ["old-path"])
+
+    async def run():
+        state = await manager._create_state("orders", "bare")
+        await manager._mark_running(state.creation_id)
+        await manager._step(state.creation_id, "working")
+        await manager._mark_succeeded(state.creation_id, "url")
+        status = await manager.get_creation_status(state.creation_id)
+        assert status.status == "done"
+        assert status.current_step == "working"
+        assert status.url == "url"
+        assert await manager.get_creation_status("missing") is None
+
+    asyncio.run(run())
+    assert written[0][1] == ".github/workflows/ci-cd.yml"
+
+
+def test_android_template_initialization_and_settings(manager):
+    calls = []
+
+    class Repo:
+        def get_branch(self, _):
+            return SimpleNamespace(commit=SimpleNamespace(sha="main"))
+
+        def get_git_tree(self, *_args, **_kwargs):
+            return SimpleNamespace(tree=[SimpleNamespace(type="blob", path="app/{{PROJECT_NAME}}.txt")])
+
+        def get_contents(self, path, **_kwargs):
+            return Item(path, "{{APP_LABEL}}")
+
+        def create_file(self, **kwargs):
+            calls.append(("create", kwargs))
+
+        def delete_file(self, **kwargs):
+            calls.append(("delete", kwargs))
+
+        def update_file(self, **kwargs):
+            calls.append(("update", kwargs))
+
+    repo = Repo()
+    manager._repo = lambda _: repo
+    manager._initialize_android_template_sync("my-app-template")
+    manager._ensure_android_settings_repositories_sync("my-app-template")
+
+    assert {call[0] for call in calls} == {"create", "delete", "update"}
+    assert "mavenCentral()" in calls[-1][1]["content"]
