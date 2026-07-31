@@ -23,6 +23,7 @@ if DEBUG:
 from app.schemas.github import (
     BareRepositoryCreateRequest,
     CreationStatusValue,
+    MongoConnection,
     PostgresConnection,
     RepositoryCreationStatusResponse,
     TemplateRepositoryCreateRequest,
@@ -57,7 +58,8 @@ class GitHubRepositoryManager:
         ("springboot", ("spring", "java")),
         ("android", ("android", "kotlin", "mobile")),
         ("fastapi", ("fastapi",)),
-        ("postgres", ("postgres", "postgresql", "migration", "db")),
+        ("mongodb", ("mongodb", "mongo")),
+        ("postgres", ("postgres", "postgresql")),
     )
 
     def __init__(self) -> None:
@@ -197,6 +199,9 @@ class GitHubRepositoryManager:
                 await asyncio.to_thread(self._put_postgres_scaffold_sync, repo.name)
                 await self._step(creation_id, "Configurando secrets PostgreSQL")
                 await asyncio.to_thread(self._configure_postgres_secrets_sync, repo.name, payload.postgres)
+            if template_language == "mongodb":
+                await self._step(creation_id, "Configurando secrets MongoDB")
+                await asyncio.to_thread(self._configure_mongodb_secrets_sync, repo.name, payload.mongodb)
 
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(
@@ -1019,7 +1024,7 @@ class ExampleUnitTest {{
             branch = repo.get_branch(settings.DEFAULT_BRANCH)
             branch.edit_protection(
                 strict=True,
-                contexts=["ci", "conventional-commits", "sonarcloud", "codeql"] + (["sql"] if language == "postgres" else []),
+                contexts=["ci", "conventional-commits", "sonarcloud", "codeql"] + (["sql"] if language in {"postgres", "mongodb"} else []),
                 enforce_admins=True,
                 dismiss_stale_reviews=True,
                 require_code_owner_reviews=False,
@@ -1146,6 +1151,7 @@ class ExampleUnitTest {{
             "fastapi": "Python",
             "android": "Android",
             "postgres": "Python",
+            "mongodb": "Python",
         }
         return templates.get(language)
 
@@ -1186,6 +1192,21 @@ class ExampleUnitTest {{
             "POSTGRES_ROOT_DB": connection.root_database,
             "POSTGRES_ROOT_USER": connection.root_user,
             "POSTGRES_ROOT_PASSWORD": connection.root_password,
+        }
+        repo = self._repo(repository_name)
+        for name, value in values.items():
+            repo.create_secret(name, value)
+
+    def _configure_mongodb_secrets_sync(self, repository_name: str, connection: MongoConnection | None) -> None:
+        if connection is None:
+            return
+        values = {
+            "MONGODB_HOST": connection.host,
+            "MONGODB_PORT": str(connection.port),
+            "MONGODB_DB": connection.database,
+            "MONGODB_USER": connection.user,
+            "MONGODB_PASSWORD": connection.password,
+            "MONGODB_AUTH_DB": connection.auth_database,
         }
         repo = self._repo(repository_name)
         for name, value in values.items():
