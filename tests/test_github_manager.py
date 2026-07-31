@@ -45,7 +45,7 @@ def test_generates_postgres_scaffold(manager):
     files = _capture_files(manager, manager._put_postgres_scaffold_sync, "orders-database")
 
     assert {"README.md", "config.yaml", "sql/versionamento.sql"} <= files.keys()
-    assert "mode: always" in files["config.yaml"]
+    assert "execution_order: []" in files["config.yaml"]
     assert "pg_advisory_xact_lock(84729341)" in files["scripts/apply_sql.py"]
     assert "controle_scripts_sql" in files["scripts/apply_sql.py"]
     assert "return expand(yaml.safe_load(raw))" in files["scripts/apply_sql.py"]
@@ -123,7 +123,7 @@ def test_bare_creation_flow(manager, language):
         manager._configure_postgres_secrets_sync = lambda *_: None
         manager._put_file_sync = lambda *_: None
         manager._put_workflow_sync = lambda *_: None
-        manager._protect_main_branch_sync = lambda _: None
+        manager._protect_main_branch_sync = lambda *_: None
         manager._create_sonarcloud_project_sync = lambda _: None
 
         await manager._create_bare_repository(
@@ -155,7 +155,7 @@ def test_template_creation_flow(manager, template_name):
         manager._put_postgres_scaffold_sync = lambda _: None
         manager._configure_postgres_secrets_sync = lambda *_: None
         manager._put_workflow_sync = lambda *_: None
-        manager._protect_main_branch_sync = lambda _: None
+        manager._protect_main_branch_sync = lambda *_: None
         manager._create_sonarcloud_project_sync = lambda _: None
 
         await manager._create_repository_from_template(
@@ -244,7 +244,7 @@ def test_repository_readiness_and_template_validation(manager):
     manager._repo = lambda _: repo
     manager._wait_until_repository_ready_sync("orders")
     manager._wait_until_paths_exist_sync("orders", ["path"])
-    manager._protect_main_branch_sync("orders")
+    manager._protect_main_branch_sync("orders", "postgres")
 
     async def run():
         manager.list_templates = lambda: asyncio.sleep(0, result=[TemplateResponse(name="template", private=True, url="url")])
@@ -252,6 +252,7 @@ def test_repository_readiness_and_template_validation(manager):
 
     asyncio.run(run())
     assert repo.branch.protection["required_approving_review_count"] == 1
+    assert "sql" in repo.branch.protection["contexts"]
 
 
 def test_android_template_helpers(manager):

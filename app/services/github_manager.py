@@ -148,7 +148,7 @@ class GitHubRepositoryManager:
             await asyncio.to_thread(self._put_workflow_sync, repo.name, payload.language)
 
             await self._step(creation_id, "Aplicando protecao da branch main")
-            await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
+            await asyncio.to_thread(self._protect_main_branch_sync, repo.name, payload.language)
 
             if payload.language == "springboot":
                 await self._step(creation_id, "Criando projeto no SonarCloud")
@@ -206,7 +206,7 @@ class GitHubRepositoryManager:
             )
 
             await self._step(creation_id, "Aplicando protecao da branch main")
-            await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
+            await asyncio.to_thread(self._protect_main_branch_sync, repo.name, template_language)
 
             if template_language == "springboot":
                 await self._step(creation_id, "Criando projeto no SonarCloud")
@@ -1013,13 +1013,13 @@ class ExampleUnitTest {{
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
-    def _protect_main_branch_sync(self, repository_name: str) -> None:
+    def _protect_main_branch_sync(self, repository_name: str, language: str = "generic") -> None:
         repo = self._repo(repository_name)
         try:
             branch = repo.get_branch(settings.DEFAULT_BRANCH)
             branch.edit_protection(
                 strict=True,
-                contexts=["ci", "conventional-commits", "sonarcloud", "codeql"],
+                contexts=["ci", "conventional-commits", "sonarcloud", "codeql"] + (["sql"] if language == "postgres" else []),
                 enforce_admins=True,
                 dismiss_stale_reviews=True,
                 require_code_owner_reviews=False,
@@ -1229,9 +1229,7 @@ database:
   sql_path: sql
   version_table: controle_versoes
   version_schema_file: versionamento.sql
-  execution_order:
-    - file: versionamento.sql
-      mode: always
+  execution_order: []
 """
 
     def _postgres_env_example(self) -> str:
