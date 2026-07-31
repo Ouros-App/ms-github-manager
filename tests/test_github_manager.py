@@ -253,10 +253,15 @@ def test_github_creation_helpers(manager):
     )
 
     assert len(manager._list_templates_sync()) == 1
-    manager._create_bare_repository_sync(BareRepositoryCreateRequest(name="orders", language="fastapi"))
-    manager._create_from_template_sync(TemplateRepositoryCreateRequest(name="orders", template_name="api-template"))
+    payload = BareRepositoryCreateRequest(name="orders", language="fastapi", description="orders\napi")
+    manager._create_bare_repository_sync(payload)
+    manager._create_from_template_sync(
+        TemplateRepositoryCreateRequest(name="orders", template_name="api-template", description="orders\napi")
+    )
 
     assert created["repo"]["gitignore_template"] == "Python"
+    assert created["repo"]["description"] == "orders api"
+    assert created["request"][2]["description"] == "orders api"
     assert created["request"][0] == "POST"
 
 

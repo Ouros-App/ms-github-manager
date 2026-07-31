@@ -237,7 +237,7 @@ class GitHubRepositoryManager:
     def _create_bare_repository_sync(self, payload: BareRepositoryCreateRequest):
         kwargs = {
             "name": payload.name,
-            "description": payload.description or "",
+            "description": self._github_description(payload.description),
             "private": False,
             "auto_init": True,
             "license_template": "mit",
@@ -258,7 +258,7 @@ class GitHubRepositoryManager:
                 input={
                     "owner": settings.GITHUB_ORG_LOGIN,
                     "name": payload.name,
-                    "description": payload.description or "",
+                    "description": self._github_description(payload.description),
                     "private": False,
                     "include_all_branches": False,
                 },
@@ -291,6 +291,9 @@ class GitHubRepositoryManager:
             workflow_content,
             "Configure CI/CD",
         )
+
+    def _github_description(self, value: str | None) -> str:
+        return re.sub(r"[\x00-\x1f\x7f]+", " ", value or "").strip()
 
     def _put_springboot_scaffold_sync(self, repository_name: str) -> None:
         application_name = self._springboot_application_name(repository_name)
