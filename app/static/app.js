@@ -27,7 +27,10 @@ async function req(url, opt = {}) {
   } catch {
     data = text;
   }
-  if (!res.ok) throw new Error((data && data.detail) || "Falha na requisicao");
+  if (!res.ok) {
+    const detail = data?.detail ?? data ?? "Falha na requisicao";
+    throw new Error(typeof detail === "string" ? detail : pretty(detail));
+  }
   return data;
 }
 
