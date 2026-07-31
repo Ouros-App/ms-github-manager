@@ -21,7 +21,8 @@ jobs:
           fetch-depth: 0
       - env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: echo "$PR_TITLE" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|deps)(\([A-Za-z0-9_.-]+\))?(!)?: .+'
+        run: >-
+          echo "$PR_TITLE" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|deps)(\([A-Za-z0-9_.-]+\))?(!)?: .+'
 
   ci:
     name: ci

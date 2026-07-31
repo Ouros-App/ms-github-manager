@@ -1020,11 +1020,16 @@ class ExampleUnitTest {{
 
     def _protect_main_branch_sync(self, repository_name: str, language: str = "generic") -> None:
         repo = self._repo(repository_name)
+        contexts = ["ci", "conventional-commits"]
+        if language != "mongodb":
+            contexts.extend(["sonarcloud", "codeql"])
+        if language in {"postgres", "mongodb"}:
+            contexts.append("sql")
         try:
             branch = repo.get_branch(settings.DEFAULT_BRANCH)
             branch.edit_protection(
                 strict=True,
-                contexts=["ci", "conventional-commits", "sonarcloud", "codeql"] + (["sql"] if language in {"postgres", "mongodb"} else []),
+                contexts=contexts,
                 enforce_admins=True,
                 dismiss_stale_reviews=True,
                 require_code_owner_reviews=False,

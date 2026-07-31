@@ -259,6 +259,9 @@ def test_repository_readiness_and_template_validation(manager):
     assert repo.branch.protection["required_approving_review_count"] == 1
     assert "sql" in repo.branch.protection["contexts"]
 
+    manager._protect_main_branch_sync("orders", "mongodb")
+    assert repo.branch.protection["contexts"] == ["ci", "conventional-commits", "sql"]
+
 
 def test_android_template_helpers(manager):
     content = "pluginManagement { repositories { google() } }\nrootProject.name = \"app\"\n"

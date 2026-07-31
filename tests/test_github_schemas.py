@@ -62,6 +62,14 @@ def test_mongodb_template_requires_and_accepts_connection():
     assert request.mongodb.port == 27017
 
 
+@pytest.mark.parametrize(("field", "value"), [("database", "orders.db"), ("auth_database", "admin$db")])
+def test_mongodb_rejects_invalid_database_names(field, value):
+    data = {"host": "mongo.example.test", "database": "orders", "user": "orders", "password": "secret"}
+    data[field] = value
+    with pytest.raises(ValidationError, match="String should match pattern"):
+        MongoConnection(**data)
+
+
 @pytest.mark.parametrize(
     ("template_name", "expected"),
     [
