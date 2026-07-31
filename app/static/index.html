@@ -39,7 +39,7 @@
             <label class="field">
               <span>Nome</span>
               <div class="name-input">
-                <input id="repoName" name="name" placeholder="ms-orders-api" autocomplete="off" required />
+                <input id="repoName" name="name" placeholder="ms-orders-api" autocomplete="off" maxlength="91" required />
                 <span class="name-suffix is-hidden" id="nameSuffix">-database</span>
               </div>
             </label>
@@ -74,10 +74,10 @@
                 <label class="field"><span>Porta</span><input name="postgres_port" type="number" value="5432" min="1" max="65535" /></label>
                 <label class="field"><span>Banco</span><input name="postgres_database" placeholder="orders" /></label>
                 <label class="field"><span>Usuario da aplicacao</span><input name="postgres_user" placeholder="orders" /></label>
-                <label class="field"><span>Senha da aplicacao</span><input name="postgres_password" type="password" /></label>
+                <label class="field"><span>Senha da aplicacao</span><input name="postgres_password" type="password" autocomplete="new-password" /></label>
                 <label class="field"><span>Banco administrativo</span><input name="postgres_root_database" value="postgres" /></label>
                 <label class="field"><span>Usuario administrativo</span><input name="postgres_root_user" placeholder="postgres" /></label>
-                <label class="field"><span>Senha administrativa</span><input name="postgres_root_password" type="password" /></label>
+                <label class="field"><span>Senha administrativa</span><input name="postgres_root_password" type="password" autocomplete="new-password" /></label>
               </div>
             </fieldset>
 

@@ -60,7 +60,7 @@ jobs:
 
       - name: Block destructive SQL
         run: |
-          if grep -RInE '\bDROP[[:space:]]+DATABASE\b' sql; then
-            echo "DROP DATABASE is forbidden"
+          if grep -RInE '\b(TRUNCATE|DROP[[:space:]]+(DATABASE|TABLE|SCHEMA))\b' sql; then
+            echo "Destructive SQL is forbidden"
             exit 1
           fi

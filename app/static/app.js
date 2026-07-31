@@ -214,7 +214,7 @@ function collectPayload() {
     return raw;
   }
   if (isPostgresTemplateName(raw.template_name || "")) {
-    raw.name = `${String(raw.name || "").replace(/-database$/i, "")}-database`;
+    raw.name = `${String(raw.name || "").replace(/-database$/i, "").slice(0, 91)}-database`;
     raw.postgres = {
       host: raw.postgres_host,
       port: Number(raw.postgres_port),

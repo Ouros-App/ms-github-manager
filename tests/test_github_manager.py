@@ -46,9 +46,41 @@ def test_generates_postgres_scaffold(manager):
 
     assert {"README.md", "config.yaml", "sql/versionamento.sql"} <= files.keys()
     assert "mode: always" in files["config.yaml"]
-    assert "mode: once" in files["config.yaml"]
     assert "pg_advisory_xact_lock(84729341)" in files["scripts/apply_sql.py"]
     assert "controle_scripts_sql" in files["scripts/apply_sql.py"]
+    assert "return expand(yaml.safe_load(raw))" in files["scripts/apply_sql.py"]
+    assert "path.relative_to(root / cfg[\"database\"][\"sql_path\"]).as_posix()" in files["scripts/apply_sql.py"]
+
+
+def test_generated_postgres_runner_handles_secret_values_and_nested_sql(manager, monkeypatch, tmp_path):
+    runner = manager._postgres_apply_sql_py().replace("import psycopg2", "psycopg2 = None")
+    scope = {}
+    exec(runner, scope)  # noqa: S102
+    (tmp_path / "config.yaml").write_text("database:\n  host: ${POSTGRES_HOST}\n")
+    monkeypatch.setenv("POSTGRES_HOST", "db: secure\nvalue")
+    assert scope["load_config"](tmp_path)["database"]["host"] == "db: secure\nvalue"
+
+    for path in (tmp_path / "sql/schema/init.sql", tmp_path / "sql/data/init.sql"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("SELECT 1;")
+    cfg = {"database": {"sql_path": "sql", "execution_order": [
+        {"file": "schema/init.sql", "mode": "on_change"},
+        {"file": "data/init.sql", "mode": "on_change"},
+    ]}}
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, *args):
+            self.calls.append(args)
+
+        def fetchone(self):
+            return None
+
+    cursor = Cursor()
+    scope["apply_sql_files"](tmp_path, cfg, cursor, "commit")
+    assert [call[1][0] for call in cursor.calls if "WHERE arquivo" in call[0]] == ["schema/init.sql", "data/init.sql"]
 
 
 @pytest.mark.parametrize(
@@ -361,6 +393,12 @@ def test_configures_postgres_secrets(manager):
     manager._configure_postgres_secrets_sync("orders-database", _postgres_connection())
 
     assert secrets["POSTGRES_HOST"] == "db.example.test"
+    assert secrets["POSTGRES_PORT"] == "5432"
+    assert secrets["POSTGRES_DB"] == "orders"
+    assert secrets["POSTGRES_USER"] == "orders"
+    assert secrets["POSTGRES_PASSWORD"] == "app-password"
+    assert secrets["POSTGRES_ROOT_DB"] == "postgres"
+    assert secrets["POSTGRES_ROOT_USER"] == "postgres"
     assert secrets["POSTGRES_ROOT_PASSWORD"] == "root-password"
 
 
