@@ -66,3 +66,4 @@ def test_repository_endpoints(monkeypatch):
     assert client.get("/repositories/creations/bare").status_code == 200
     assert client.get("/repositories/creations/missing").status_code == 404
     assert client.get("/app", follow_redirects=False).status_code == 307
+    assert client.get("/ui").status_code == 200

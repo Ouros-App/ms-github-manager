@@ -154,6 +154,7 @@ jobs:
             echo "sonar.projectKey=${SONAR_PROJECT_KEY:-${owner}_${repo}}"
             echo "sonar.sources=app"
             echo "sonar.tests=tests"
+            echo "sonar.coverage.exclusions=app/static/**"
             echo "sonar.python.coverage.reportPaths=coverage.xml"
             if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
               echo "sonar.branch.name=main"

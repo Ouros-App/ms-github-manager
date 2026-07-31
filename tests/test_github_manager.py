@@ -296,3 +296,28 @@ def test_android_template_initialization_and_settings(manager):
 
     assert {call[0] for call in calls} == {"create", "delete", "update"}
     assert "mavenCentral()" in calls[-1][1]["content"]
+
+
+def test_repository_lookup_template_detection_and_directory_delete(manager):
+    calls = []
+
+    class Repo:
+        def get_contents(self, path, **_kwargs):
+            if path == "directory":
+                return [Item(f"{path}/first"), Item(f"{path}/second")]
+            return Item(path)
+
+        def delete_file(self, **kwargs):
+            calls.append(kwargs["path"])
+
+    repo = Repo()
+    manager._client = SimpleNamespace(get_organization=lambda _: "org", get_repo=lambda _: repo)
+
+    assert manager._org() == "org"
+    assert manager._repo("orders") is repo
+    assert manager._is_template_repository(SimpleNamespace(raw_data={"is_template": True}))
+    assert manager._is_template_repository(SimpleNamespace(raw_data={}, is_template=False)) is False
+    assert manager._is_template_repository(SimpleNamespace(raw_data={})) is False
+    manager._delete_path_sync("orders", "directory")
+
+    assert calls == ["directory/first", "directory/second"]
