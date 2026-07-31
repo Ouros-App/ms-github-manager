@@ -66,6 +66,20 @@
             <p class="template-warning is-hidden" id="templateWarning">
               Template PostgreSQL detectado. O nome do repositorio deve terminar com <code>-database</code>.
             </p>
+            <fieldset class="postgres-fields is-hidden" id="postgresFields">
+              <legend>Conexao PostgreSQL</legend>
+              <p>Os valores serao salvos como GitHub Actions secrets do novo repositorio.</p>
+              <div class="field-grid">
+                <label class="field"><span>Host</span><input name="postgres_host" placeholder="db.exemplo.com" /></label>
+                <label class="field"><span>Porta</span><input name="postgres_port" type="number" value="5432" min="1" max="65535" /></label>
+                <label class="field"><span>Banco</span><input name="postgres_database" placeholder="orders" /></label>
+                <label class="field"><span>Usuario da aplicacao</span><input name="postgres_user" placeholder="orders" /></label>
+                <label class="field"><span>Senha da aplicacao</span><input name="postgres_password" type="password" /></label>
+                <label class="field"><span>Banco administrativo</span><input name="postgres_root_database" value="postgres" /></label>
+                <label class="field"><span>Usuario administrativo</span><input name="postgres_root_user" placeholder="postgres" /></label>
+                <label class="field"><span>Senha administrativa</span><input name="postgres_root_password" type="password" /></label>
+              </div>
+            </fieldset>
 
             <div class="actions">
               <button type="submit" id="submitBtn">Criar repositorio</button>

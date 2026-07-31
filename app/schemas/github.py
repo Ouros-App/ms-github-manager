@@ -93,11 +93,23 @@ class BareRepositoryCreateRequest(BaseModel):
         return self
 
 
+class PostgresConnection(BaseModel):
+    host: str = Field(..., min_length=1, max_length=253)
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str = Field(..., min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_]+$")
+    user: str = Field(..., min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_]+$")
+    password: str = Field(..., min_length=1, max_length=256)
+    root_database: str = Field(default="postgres", min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_]+$")
+    root_user: str = Field(..., min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_]+$")
+    root_password: str = Field(..., min_length=1, max_length=256)
+
+
 class TemplateRepositoryCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
     template_name: str = Field(..., min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
     description: str | None = Field(default=None, max_length=350)
     visibility: RepositoryVisibility = "private"
+    postgres: PostgresConnection | None = None
 
     model_config = {
         "json_schema_extra": {
@@ -114,6 +126,8 @@ class TemplateRepositoryCreateRequest(BaseModel):
     def validate_postgres_template_name(self) -> "TemplateRepositoryCreateRequest":
         if _is_postgres_template(self.template_name):
             _validate_database_suffix(self.name)
+            if self.postgres is None:
+                raise ValueError("Informe a conexao PostgreSQL para o template de banco.")
         return self
 
 

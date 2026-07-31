@@ -101,6 +101,8 @@ POST /repositories/from-template
 
 O workflow de CI/CD e escolhido pelo nome do template quando ele contem `frontend`, `react`, `vite`, `typescript`, `spring`, `java`, `android`, `kotlin`, `mobile`, `postgres`, `postgresql`, `migration` ou `fastapi`. Outros templates recebem um workflow generico.
 
+No template PostgreSQL, `execution_order` aceita `{ file, mode }`: `always` executa a cada deploy, `on_change` executa apenas quando o SHA-256 do SQL muda, `once` executa somente na primeira vez e `never` apenas valida a existencia. Strings antigas continuam como `on_change`. O estado fica em `controle_scripts_sql`, dentro da mesma transacao e sob advisory lock.
+
 O repositorio escolhido em `template_name` precisa estar marcado como template no GitHub. Se o nome existir mas o repo nao estiver habilitado como template, a API do GitHub pode responder com `404 Not Found`.
 
 ### Consultar status de criacao

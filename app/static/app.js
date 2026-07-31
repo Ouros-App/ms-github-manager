@@ -38,6 +38,7 @@ function setOutput(id, value) {
 function syncTemplateWarning() {
   const warning = $("#templateWarning");
   const suffix = $("#nameSuffix");
+  const postgres = $("#postgresFields");
   const input = $("#repoName");
   if (!warning) return;
   const selected = $("#templateSelect")?.value || "";
@@ -45,6 +46,10 @@ function syncTemplateWarning() {
   warning.classList.toggle("is-hidden", !show);
   suffix?.classList.toggle("is-hidden", !show);
   input?.classList.toggle("with-suffix", show);
+  postgres?.classList.toggle("is-hidden", !show);
+  postgres?.querySelectorAll("input").forEach((input) => {
+    input.required = show;
+  });
   input.placeholder = show ? "ms-orders" : "ms-orders-api";
 }
 
@@ -204,12 +209,24 @@ function collectPayload() {
   if (!raw.description) delete raw.description;
   if (mode === "bare") {
     delete raw.template_name;
+    Object.keys(raw).filter((key) => key.startsWith("postgres_")).forEach((key) => delete raw[key]);
     raw.language = "generic";
     return raw;
   }
   if (isPostgresTemplateName(raw.template_name || "")) {
     raw.name = `${String(raw.name || "").replace(/-database$/i, "")}-database`;
+    raw.postgres = {
+      host: raw.postgres_host,
+      port: Number(raw.postgres_port),
+      database: raw.postgres_database,
+      user: raw.postgres_user,
+      password: raw.postgres_password,
+      root_database: raw.postgres_root_database,
+      root_user: raw.postgres_root_user,
+      root_password: raw.postgres_root_password,
+    };
   }
+  Object.keys(raw).filter((key) => key.startsWith("postgres_")).forEach((key) => delete raw[key]);
   delete raw.language;
   return raw;
 }
@@ -225,7 +242,12 @@ async function submitCreation(event) {
   const url = mode === "bare" ? "/repositories/bare" : "/repositories/from-template";
   const payload = collectPayload();
   validateBeforeSubmit(payload);
-  setOutput("#resultBox", { status: "sending", payload });
+  const safePayload = structuredClone(payload);
+  if (safePayload.postgres) {
+    safePayload.postgres.password = "[oculta]";
+    safePayload.postgres.root_password = "[oculta]";
+  }
+  setOutput("#resultBox", { status: "sending", payload: safePayload });
   try {
     const data = await req(url, { method: "POST", body: JSON.stringify(payload) });
     setOutput("#resultBox", data);

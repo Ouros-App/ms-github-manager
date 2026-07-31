@@ -277,6 +277,20 @@ textarea:focus {
   font-weight: 700;
 }
 
+.postgres-fields {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.postgres-fields p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .actions,
 .status-actions {
   display: flex;

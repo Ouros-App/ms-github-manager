@@ -56,15 +56,11 @@ jobs:
       - name: Validate migration naming
         run: |
           find sql -type f -name '*.sql' | sort | grep -q .
-          grep -Eq '^[[:space:]]*-[[:space:]]+[A-Za-z0-9_.-]+\.sql$' config.yaml
+          grep -Eq 'file:[[:space:]]+[A-Za-z0-9_.-]+\.sql' config.yaml
 
-      - name: Validate idempotent SQL markers
+      - name: Block destructive SQL
         run: |
-          if grep -RInE '\b(INSERT|UPDATE|DELETE|DROP DATABASE)\b' sql; then
-            echo "DML or forbidden statement found"
-            exit 1
-          fi
-          if ! grep -RInE 'IF NOT EXISTS|IF EXISTS' sql; then
-            echo "Missing idempotent guard"
+          if grep -RInE '\bDROP[[:space:]]+DATABASE\b' sql; then
+            echo "DROP DATABASE is forbidden"
             exit 1
           fi
