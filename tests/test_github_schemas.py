@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.schemas.github import (
     BareRepositoryCreateRequest,
+    PostgresConnection,
     TemplateRepositoryCreateRequest,
 )
 
@@ -20,6 +21,27 @@ def test_postgres_repository_accepts_database_suffix():
 def test_postgres_template_requires_database_suffix():
     with pytest.raises(ValidationError, match="terminar com '-database'"):
         TemplateRepositoryCreateRequest(name="orders", template_name="ms-postgres-template")
+
+
+def test_postgres_template_requires_connection():
+    with pytest.raises(ValidationError, match="Informe a conexao PostgreSQL"):
+        TemplateRepositoryCreateRequest(name="orders-database", template_name="ms-postgres-template")
+
+
+def test_postgres_template_accepts_connection():
+    request = TemplateRepositoryCreateRequest(
+        name="orders-database",
+        template_name="ms-postgres-template",
+        postgres=PostgresConnection(
+            host="db.example.test",
+            database="orders",
+            user="orders",
+            password="app-password",
+            root_user="postgres",
+            root_password="root-password",
+        ),
+    )
+    assert request.postgres.port == 5432
 
 
 def test_non_postgres_template_allows_regular_name():

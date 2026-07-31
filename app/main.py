@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
@@ -26,6 +29,12 @@ app = FastAPI(
         {"name": "Repositories", "description": "Criacao e acompanhamento de repositorios GitHub."},
     ],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    errors = [{key: value for key, value in error.items() if key != "input"} for error in exc.errors()]
+    return JSONResponse(status_code=422, content=jsonable_encoder({"detail": errors}))
 
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

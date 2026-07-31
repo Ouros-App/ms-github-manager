@@ -67,3 +67,53 @@ def test_repository_endpoints(monkeypatch):
     assert client.get("/repositories/creations/missing").status_code == 404
     assert client.get("/app", follow_redirects=False).status_code == 307
     assert client.get("/ui").status_code == 200
+
+
+def test_validation_error_hides_postgres_password(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "test")
+    from app.main import app
+
+    response = TestClient(app).post(
+        "/repositories/from-template",
+        json={
+            "name": "orders-database",
+            "template_name": "postgres-template",
+            "postgres": {
+                "host": "db.example.test",
+                "database": "orders",
+                "user": "orders",
+                "password": "private-password",
+                "root_user": "postgres",
+                "root_password": "",
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert "private-password" not in response.text
+    assert "root_password" in response.text
+    assert '"input"' not in response.text
+
+
+def test_validation_error_with_context_returns_422(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "test")
+    from app.main import app
+
+    response = TestClient(app).post(
+        "/repositories/from-template",
+        json={
+            "name": "orders",
+            "template_name": "postgres-template",
+            "postgres": {
+                "host": "db.example.test",
+                "database": "orders",
+                "user": "orders",
+                "password": "private-password",
+                "root_user": "postgres",
+                "root_password": "root-password",
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert '"input"' not in response.text

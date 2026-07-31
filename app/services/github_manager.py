@@ -23,6 +23,7 @@ if DEBUG:
 from app.schemas.github import (
     BareRepositoryCreateRequest,
     CreationStatusValue,
+    PostgresConnection,
     RepositoryCreationStatusResponse,
     TemplateRepositoryCreateRequest,
     TemplateResponse,
@@ -147,7 +148,7 @@ class GitHubRepositoryManager:
             await asyncio.to_thread(self._put_workflow_sync, repo.name, payload.language)
 
             await self._step(creation_id, "Aplicando protecao da branch main")
-            await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
+            await asyncio.to_thread(self._protect_main_branch_sync, repo.name, payload.language)
 
             if payload.language == "springboot":
                 await self._step(creation_id, "Criando projeto no SonarCloud")
@@ -194,6 +195,8 @@ class GitHubRepositoryManager:
             if template_language == "postgres":
                 await self._step(creation_id, "Inicializando template PostgreSQL")
                 await asyncio.to_thread(self._put_postgres_scaffold_sync, repo.name)
+                await self._step(creation_id, "Configurando secrets PostgreSQL")
+                await asyncio.to_thread(self._configure_postgres_secrets_sync, repo.name, payload.postgres)
 
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(
@@ -203,7 +206,7 @@ class GitHubRepositoryManager:
             )
 
             await self._step(creation_id, "Aplicando protecao da branch main")
-            await asyncio.to_thread(self._protect_main_branch_sync, repo.name)
+            await asyncio.to_thread(self._protect_main_branch_sync, repo.name, template_language)
 
             if template_language == "springboot":
                 await self._step(creation_id, "Criando projeto no SonarCloud")
@@ -234,7 +237,7 @@ class GitHubRepositoryManager:
     def _create_bare_repository_sync(self, payload: BareRepositoryCreateRequest):
         kwargs = {
             "name": payload.name,
-            "description": payload.description or "",
+            "description": self._github_description(payload.description),
             "private": False,
             "auto_init": True,
             "license_template": "mit",
@@ -255,7 +258,7 @@ class GitHubRepositoryManager:
                 input={
                     "owner": settings.GITHUB_ORG_LOGIN,
                     "name": payload.name,
-                    "description": payload.description or "",
+                    "description": self._github_description(payload.description),
                     "private": False,
                     "include_all_branches": False,
                 },
@@ -288,6 +291,9 @@ class GitHubRepositoryManager:
             workflow_content,
             "Configure CI/CD",
         )
+
+    def _github_description(self, value: str | None) -> str:
+        return re.sub(r"[\x00-\x1f\x7f]+", " ", value or "").strip()
 
     def _put_springboot_scaffold_sync(self, repository_name: str) -> None:
         application_name = self._springboot_application_name(repository_name)
@@ -1007,13 +1013,13 @@ class ExampleUnitTest {{
         except GithubException as exc:
             raise GitHubManagerError(self._format_github_error(exc)) from exc
 
-    def _protect_main_branch_sync(self, repository_name: str) -> None:
+    def _protect_main_branch_sync(self, repository_name: str, language: str = "generic") -> None:
         repo = self._repo(repository_name)
         try:
             branch = repo.get_branch(settings.DEFAULT_BRANCH)
             branch.edit_protection(
                 strict=True,
-                contexts=["ci", "conventional-commits", "sonarcloud", "codeql"],
+                contexts=["ci", "conventional-commits", "sonarcloud", "codeql"] + (["sql"] if language == "postgres" else []),
                 enforce_admins=True,
                 dismiss_stale_reviews=True,
                 require_code_owner_reviews=False,
@@ -1168,6 +1174,23 @@ class ExampleUnitTest {{
         for path, content in files.items():
             self._put_file_sync(repository_name, path, content, f"Add PostgreSQL template file: {path}")
 
+    def _configure_postgres_secrets_sync(self, repository_name: str, connection: PostgresConnection | None) -> None:
+        if connection is None:
+            return
+        values = {
+            "POSTGRES_HOST": connection.host,
+            "POSTGRES_PORT": str(connection.port),
+            "POSTGRES_DB": connection.database,
+            "POSTGRES_USER": connection.user,
+            "POSTGRES_PASSWORD": connection.password,
+            "POSTGRES_ROOT_DB": connection.root_database,
+            "POSTGRES_ROOT_USER": connection.root_user,
+            "POSTGRES_ROOT_PASSWORD": connection.root_password,
+        }
+        repo = self._repo(repository_name)
+        for name, value in values.items():
+            repo.create_secret(name, value)
+
     def _postgres_readme(self, repository_name: str) -> str:
         app_name = self._postgres_app_name(repository_name)
         return f"""# {app_name}
@@ -1206,8 +1229,7 @@ database:
   sql_path: sql
   version_table: controle_versoes
   version_schema_file: versionamento.sql
-  execution_order:
-    - versionamento.sql
+  execution_order: []
 """
 
     def _postgres_env_example(self) -> str:
@@ -1229,6 +1251,7 @@ python-dotenv==1.0.1
 
     def _postgres_apply_sql_py(self) -> str:
         return """#!/usr/bin/env python3
+import hashlib
 import os
 import re
 import subprocess
@@ -1248,8 +1271,20 @@ def qident(name: str) -> str:
 
 def load_config(root: Path) -> dict:
     raw = (root / "config.yaml").read_text(encoding="utf-8")
-    raw = ENV_RE.sub(lambda m: os.getenv(m.group(1), ""), raw)
-    return yaml.safe_load(raw)
+    def replace(match):
+        value = os.getenv(match.group(1))
+        if value is None:
+            raise RuntimeError(f"Variavel de ambiente obrigatoria ausente: {match.group(1)}")
+        return value
+    def expand(value):
+        if isinstance(value, str):
+            return ENV_RE.sub(replace, value)
+        if isinstance(value, list):
+            return [expand(item) for item in value]
+        if isinstance(value, dict):
+            return {key: expand(item) for key, item in value.items()}
+        return value
+    return expand(yaml.safe_load(raw))
 
 
 def git_value(root: Path, *args: str) -> str:
@@ -1288,19 +1323,53 @@ def ensure_version_table(cur, root: Path, cfg: dict) -> None:
     cur.execute(path.read_text(encoding="utf-8"))
 
 
-def next_version(cur, table: str) -> int:
-    cur.execute(f"SELECT COALESCE(MAX(versao), 0) + 1 FROM {qident(table)}")
-    return int(cur.fetchone()[0])
-
-
-def apply_sql_files(root: Path, cfg: dict, cur) -> None:
+def sql_entries(root: Path, cfg: dict) -> list[tuple[Path, str]]:
     db = cfg["database"]
     sql_dir = root / db["sql_path"]
-    for name in db["execution_order"]:
-        path = sql_dir / name
+    entries, seen = [], set()
+    for item in db["execution_order"]:
+        name, mode = (item, "on_change") if isinstance(item, str) else (item.get("file"), item.get("mode", "on_change")) if isinstance(item, dict) else (None, None)
+        if not isinstance(name, str) or not name or mode not in {"always", "on_change", "once", "never"}:
+            raise ValueError("Cada script exige file e mode valido (always, on_change, once ou never).")
+        path = Path(name)
+        identity = path.as_posix()
+        if path.is_absolute() or ".." in path.parts or path.suffix != ".sql" or identity in seen:
+            raise ValueError(f"Script SQL invalido ou duplicado: {name}")
+        seen.add(identity)
+        path = sql_dir / path
         if not path.is_file():
             raise FileNotFoundError(f"SQL nao encontrado: {path}")
-        cur.execute(path.read_text(encoding="utf-8"))
+        entries.append((path, mode))
+    return entries
+
+
+def apply_sql_files(root: Path, cfg: dict, cur, commit_id: str) -> None:
+    cur.execute("SELECT pg_advisory_xact_lock(84729341)")
+    cur.execute("CREATE TABLE IF NOT EXISTS controle_scripts_sql ("
+                "arquivo TEXT PRIMARY KEY, checksum VARCHAR(64) NOT NULL, "
+                "commit_id VARCHAR(64) NOT NULL, executado_em TIMESTAMPTZ NOT NULL DEFAULT NOW())")
+    for path, mode in sql_entries(root, cfg):
+        identity = path.relative_to(root / cfg["database"]["sql_path"]).as_posix()
+        content = path.read_text(encoding="utf-8")
+        checksum = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if mode == "never":
+            print(f"[SKIP] {identity}: modo never")
+            continue
+        cur.execute("SELECT checksum FROM controle_scripts_sql WHERE arquivo = %s", (identity,))
+        row = cur.fetchone()
+        if mode == "once" and row:
+            print(f"[SKIP] {identity}: modo once")
+            continue
+        if mode == "on_change" and row and row[0] == checksum:
+            print(f"[SKIP] {identity}: sem alteracoes")
+            continue
+        reason = "modo always" if mode == "always" else "modo once" if mode == "once" else "arquivo novo" if not row else "conteudo alterado"
+        print(f"[RUN] {identity}: {reason}")
+        cur.execute(content)
+        cur.execute("INSERT INTO controle_scripts_sql (arquivo, checksum, commit_id) "
+                    "VALUES (%s, %s, %s) ON CONFLICT (arquivo) DO UPDATE SET "
+                    "checksum = EXCLUDED.checksum, commit_id = EXCLUDED.commit_id, executado_em = NOW()",
+                    (identity, checksum, commit_id))
 
 
 def main() -> None:
@@ -1319,10 +1388,10 @@ def main() -> None:
         with conn:
             with conn.cursor() as cur:
                 ensure_version_table(cur, root, cfg)
-                apply_sql_files(root, cfg, cur)
+                apply_sql_files(root, cfg, cur, commit_id)
                 cur.execute(
-                    f"INSERT INTO {qident(table)} (versao, commit_id, comentario_commit) VALUES (%s, %s, %s)",
-                    (next_version(cur, table), commit_id, commit_msg),
+                    f"INSERT INTO {qident(table)} (commit_id, comentario_commit) VALUES (%s, %s)",
+                    (commit_id, commit_msg),
                 )
         print(f"SQL aplicado no banco {db['name']} e versao registrada para commit {commit_id}")
     finally:
@@ -1335,8 +1404,8 @@ if __name__ == "__main__":
 
     def _postgres_versioning_sql(self) -> str:
         return """CREATE TABLE IF NOT EXISTS controle_versoes (
-    id SERIAL PRIMARY KEY,
-    versao INTEGER UNIQUE NOT NULL,
+    id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    versao BIGINT GENERATED BY DEFAULT AS IDENTITY UNIQUE NOT NULL,
     commit_id VARCHAR(64) NOT NULL,
     comentario_commit TEXT NOT NULL,
     aplicado_em TIMESTAMP DEFAULT NOW()

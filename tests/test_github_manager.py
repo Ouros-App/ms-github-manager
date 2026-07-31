@@ -5,6 +5,7 @@ import pytest
 
 from app.schemas.github import (
     BareRepositoryCreateRequest,
+    PostgresConnection,
     TemplateRepositoryCreateRequest,
     TemplateResponse,
 )
@@ -44,6 +45,42 @@ def test_generates_postgres_scaffold(manager):
     files = _capture_files(manager, manager._put_postgres_scaffold_sync, "orders-database")
 
     assert {"README.md", "config.yaml", "sql/versionamento.sql"} <= files.keys()
+    assert "execution_order: []" in files["config.yaml"]
+    assert "pg_advisory_xact_lock(84729341)" in files["scripts/apply_sql.py"]
+    assert "controle_scripts_sql" in files["scripts/apply_sql.py"]
+    assert "return expand(yaml.safe_load(raw))" in files["scripts/apply_sql.py"]
+    assert "path.relative_to(root / cfg[\"database\"][\"sql_path\"]).as_posix()" in files["scripts/apply_sql.py"]
+
+
+def test_generated_postgres_runner_handles_secret_values_and_nested_sql(manager, monkeypatch, tmp_path):
+    runner = manager._postgres_apply_sql_py().replace("import psycopg2", "psycopg2 = None")
+    scope = {}
+    exec(runner, scope)  # noqa: S102
+    (tmp_path / "config.yaml").write_text("database:\n  host: ${POSTGRES_HOST}\n")
+    monkeypatch.setenv("POSTGRES_HOST", "db: secure\nvalue")
+    assert scope["load_config"](tmp_path)["database"]["host"] == "db: secure\nvalue"
+
+    for path in (tmp_path / "sql/schema/init.sql", tmp_path / "sql/data/init.sql"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("SELECT 1;")
+    cfg = {"database": {"sql_path": "sql", "execution_order": [
+        {"file": "schema/init.sql", "mode": "on_change"},
+        {"file": "data/init.sql", "mode": "on_change"},
+    ]}}
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, *args):
+            self.calls.append(args)
+
+        def fetchone(self):
+            return None
+
+    cursor = Cursor()
+    scope["apply_sql_files"](tmp_path, cfg, cursor, "commit")
+    assert [call[1][0] for call in cursor.calls if "WHERE arquivo" in call[0]] == ["schema/init.sql", "data/init.sql"]
 
 
 @pytest.mark.parametrize(
@@ -83,9 +120,10 @@ def test_bare_creation_flow(manager, language):
         manager._put_sonar_properties_sync = lambda _: None
         manager._put_android_scaffold_sync = lambda _: None
         manager._put_postgres_scaffold_sync = lambda _: None
+        manager._configure_postgres_secrets_sync = lambda *_: None
         manager._put_file_sync = lambda *_: None
         manager._put_workflow_sync = lambda *_: None
-        manager._protect_main_branch_sync = lambda _: None
+        manager._protect_main_branch_sync = lambda *_: None
         manager._create_sonarcloud_project_sync = lambda _: None
 
         await manager._create_bare_repository(
@@ -115,13 +153,18 @@ def test_template_creation_flow(manager, template_name):
         manager._put_sonar_properties_sync = lambda _: None
         manager._initialize_android_template_sync = lambda _: None
         manager._put_postgres_scaffold_sync = lambda _: None
+        manager._configure_postgres_secrets_sync = lambda *_: None
         manager._put_workflow_sync = lambda *_: None
-        manager._protect_main_branch_sync = lambda _: None
+        manager._protect_main_branch_sync = lambda *_: None
         manager._create_sonarcloud_project_sync = lambda _: None
 
         await manager._create_repository_from_template(
             state.creation_id,
-            TemplateRepositoryCreateRequest(name=state.repository.rsplit("/", 1)[1], template_name=template_name),
+            TemplateRepositoryCreateRequest(
+                name=state.repository.rsplit("/", 1)[1],
+                template_name=template_name,
+                postgres=_postgres_connection() if "postgres" in template_name else None,
+            ),
         )
 
         assert (await manager.get_creation_status(state.creation_id)).status == "done"
@@ -135,6 +178,17 @@ class Item:
         self.sha = "sha"
         self.type = item_type
         self.decoded_content = content.encode()
+
+
+def _postgres_connection():
+    return PostgresConnection(
+        host="db.example.test",
+        database="orders",
+        user="orders",
+        password="app-password",
+        root_user="postgres",
+        root_password="root-password",
+    )
 
 
 def test_repository_file_operations(manager):
@@ -190,7 +244,7 @@ def test_repository_readiness_and_template_validation(manager):
     manager._repo = lambda _: repo
     manager._wait_until_repository_ready_sync("orders")
     manager._wait_until_paths_exist_sync("orders", ["path"])
-    manager._protect_main_branch_sync("orders")
+    manager._protect_main_branch_sync("orders", "postgres")
 
     async def run():
         manager.list_templates = lambda: asyncio.sleep(0, result=[TemplateResponse(name="template", private=True, url="url")])
@@ -198,6 +252,7 @@ def test_repository_readiness_and_template_validation(manager):
 
     asyncio.run(run())
     assert repo.branch.protection["required_approving_review_count"] == 1
+    assert "sql" in repo.branch.protection["contexts"]
 
 
 def test_android_template_helpers(manager):
@@ -231,10 +286,15 @@ def test_github_creation_helpers(manager):
     )
 
     assert len(manager._list_templates_sync()) == 1
-    manager._create_bare_repository_sync(BareRepositoryCreateRequest(name="orders", language="fastapi"))
-    manager._create_from_template_sync(TemplateRepositoryCreateRequest(name="orders", template_name="api-template"))
+    payload = BareRepositoryCreateRequest(name="orders", language="fastapi", description="orders\napi")
+    manager._create_bare_repository_sync(payload)
+    manager._create_from_template_sync(
+        TemplateRepositoryCreateRequest(name="orders", template_name="api-template", description="orders\napi")
+    )
 
     assert created["repo"]["gitignore_template"] == "Python"
+    assert created["repo"]["description"] == "orders api"
+    assert created["request"][2]["description"] == "orders api"
     assert created["request"][0] == "POST"
 
 
@@ -321,6 +381,26 @@ def test_repository_lookup_template_detection_and_directory_delete(manager):
     manager._delete_path_sync("orders", "directory")
 
     assert calls == ["directory/first", "directory/second"]
+
+
+def test_configures_postgres_secrets(manager):
+    secrets = {}
+
+    class Repo:
+        def create_secret(self, name, value):
+            secrets[name] = value
+
+    manager._repo = lambda _: Repo()
+    manager._configure_postgres_secrets_sync("orders-database", _postgres_connection())
+
+    assert secrets["POSTGRES_HOST"] == "db.example.test"
+    assert secrets["POSTGRES_PORT"] == "5432"
+    assert secrets["POSTGRES_DB"] == "orders"
+    assert secrets["POSTGRES_USER"] == "orders"
+    assert secrets["POSTGRES_PASSWORD"] == "app-password"
+    assert secrets["POSTGRES_ROOT_DB"] == "postgres"
+    assert secrets["POSTGRES_ROOT_USER"] == "postgres"
+    assert secrets["POSTGRES_ROOT_PASSWORD"] == "root-password"
 
 
 def test_debug_logging_paths(manager, monkeypatch):
