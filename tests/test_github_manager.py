@@ -321,3 +321,55 @@ def test_repository_lookup_template_detection_and_directory_delete(manager):
     manager._delete_path_sync("orders", "directory")
 
     assert calls == ["directory/first", "directory/second"]
+
+
+def test_debug_logging_paths(manager, monkeypatch):
+    import app.services.github_manager as manager_module
+
+    class Repo:
+        def get_contents(self, path, **_kwargs):
+            if path == "missing":
+                from github.GithubException import UnknownObjectException
+
+                raise UnknownObjectException(404, {"message": "Not Found"}, None)
+            return Item(path)
+
+        def update_file(self, **_kwargs):
+            return None
+
+        def create_file(self, **_kwargs):
+            return None
+
+    monkeypatch.setattr(manager_module, "DEBUG", True)
+    monkeypatch.setattr(manager_module.settings, "SONAR_CLOUD_TOKEN", None)
+    manager._put_file_sync = lambda *_: None
+    manager._workflow = lambda _: "Disable Automatic Analysis"
+    manager._put_workflow_sync("orders", "fastapi")
+    manager._workflow = lambda _: "workflow"
+    manager._put_workflow_sync("orders", "fastapi")
+    manager._create_sonarcloud_project_sync("orders")
+    manager._repo = lambda _: Repo()
+    manager._put_file_sync("orders", "exists", "content", "update")
+    manager._put_file_sync("orders", "missing", "content", "create")
+
+    assert manager._template_language("fastapi-template") == "fastapi"
+    assert manager._template_language("generic-template") == "generic"
+
+
+@pytest.mark.parametrize("mode", ["bare", "template"])
+def test_creation_failure_marks_status(manager, mode):
+    async def run():
+        state = await manager._create_state("orders", mode)
+        if mode == "bare":
+            manager._create_bare_repository_sync = lambda _: (_ for _ in ()).throw(RuntimeError("failed"))
+            await manager._create_bare_repository(state.creation_id, BareRepositoryCreateRequest(name="orders"))
+        else:
+            manager._assert_template_exists = lambda _: (_ for _ in ()).throw(RuntimeError("failed"))
+            await manager._create_repository_from_template(
+                state.creation_id,
+                TemplateRepositoryCreateRequest(name="orders", template_name="api-template"),
+            )
+
+        assert (await manager.get_creation_status(state.creation_id)).status == "failed"
+
+    asyncio.run(run())
