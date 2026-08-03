@@ -1162,6 +1162,8 @@ class ExampleUnitTest {{
 
     def _template_language(self, template_name: str) -> str:
         normalized_name = template_name.lower()
+        if "mongo" in normalized_name and ("postgres" in normalized_name or "postgresql" in normalized_name):
+            raise ValueError("O template nao pode ser classificado simultaneamente como PostgreSQL e MongoDB.")
         if DEBUG:
             logger.debug(f"[_template_language] template_name={template_name} normalized={normalized_name}")
         for language, keywords in self._TEMPLATE_KEYWORDS:
@@ -1205,14 +1207,7 @@ class ExampleUnitTest {{
     def _configure_mongodb_secrets_sync(self, repository_name: str, connection: MongoConnection | None) -> None:
         if connection is None:
             return
-        values = {
-            "MONGODB_HOST": connection.host,
-            "MONGODB_PORT": str(connection.port),
-            "MONGODB_DB": connection.database,
-            "MONGODB_USER": connection.user,
-            "MONGODB_PASSWORD": connection.password,
-            "MONGODB_AUTH_DB": connection.auth_database,
-        }
+        values = {"MONGODB_URI": connection.connection_url}
         repo = self._repo(repository_name)
         for name, value in values.items():
             repo.create_secret(name, value)

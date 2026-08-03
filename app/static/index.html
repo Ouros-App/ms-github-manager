@@ -83,14 +83,7 @@
             <fieldset class="postgres-fields is-hidden" id="mongodbFields">
               <legend>Conexao MongoDB</legend>
               <p>Os valores serao salvos como GitHub Actions secrets do novo repositorio.</p>
-              <div class="field-grid">
-                <label class="field"><span>Host</span><input name="mongodb_host" placeholder="mongo.exemplo.com" /></label>
-                <label class="field"><span>Porta</span><input name="mongodb_port" type="number" value="27017" min="1" max="65535" /></label>
-                <label class="field"><span>Banco</span><input name="mongodb_database" placeholder="orders" /></label>
-                <label class="field"><span>Usuario</span><input name="mongodb_user" placeholder="orders" /></label>
-                <label class="field"><span>Senha</span><input name="mongodb_password" type="password" autocomplete="new-password" /></label>
-                <label class="field"><span>Banco de autenticacao</span><input name="mongodb_auth_database" value="admin" /></label>
-              </div>
+              <label class="field"><span>URL de conexao</span><input name="mongodb_connection_url" type="password" autocomplete="new-password" placeholder="mongodb+srv://usuario:senha@cluster.mongodb.net/banco" /></label>
             </fieldset>
 
             <div class="actions">

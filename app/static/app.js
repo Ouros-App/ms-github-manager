@@ -51,8 +51,10 @@ function syncTemplateWarning() {
   const input = $("#repoName");
   if (!warning) return;
   const selected = $("#templateSelect")?.value || "";
-  const showPostgres = mode === "template" && isPostgresTemplateName(selected);
-  const showMongo = mode === "template" && isMongoTemplateName(selected);
+  const isPostgres = isPostgresTemplateName(selected);
+  const isMongo = isMongoTemplateName(selected);
+  const showPostgres = mode === "template" && isPostgres && !isMongo;
+  const showMongo = mode === "template" && isMongo && !isPostgres;
   const show = showPostgres || showMongo;
   warning.classList.toggle("is-hidden", !show);
   suffix?.classList.toggle("is-hidden", !show);
@@ -243,14 +245,7 @@ function collectPayload() {
   }
   if (isMongoTemplateName(raw.template_name || "")) {
     raw.name = `${String(raw.name || "").replace(/-database$/i, "").slice(0, 91)}-database`;
-    raw.mongodb = {
-      host: raw.mongodb_host,
-      port: Number(raw.mongodb_port),
-      database: raw.mongodb_database,
-      user: raw.mongodb_user,
-      password: raw.mongodb_password,
-      auth_database: raw.mongodb_auth_database,
-    };
+    raw.mongodb = { connection_url: raw.mongodb_connection_url };
   }
   Object.keys(raw).filter((key) => key.startsWith("postgres_") || key.startsWith("mongodb_")).forEach((key) => delete raw[key]);
   delete raw.language;
@@ -273,7 +268,7 @@ async function submitCreation(event) {
     safePayload.postgres.password = "[oculta]";
     safePayload.postgres.root_password = "[oculta]";
   }
-  if (safePayload.mongodb) safePayload.mongodb.password = "[oculta]";
+  if (safePayload.mongodb) safePayload.mongodb.connection_url = "[oculta]";
   setOutput("#resultBox", { status: "sending", payload: safePayload });
   try {
     const data = await req(url, { method: "POST", body: JSON.stringify(payload) });
