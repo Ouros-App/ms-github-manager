@@ -1,10 +1,11 @@
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, RedirectResponse
 
+from app.core.auth import create_session, login_allowed
 from app.core.config import settings
-from app.schemas.common import HealthResponse, MessageResponse
+from app.schemas.common import HealthResponse, LoginRequest, MessageResponse
 from app.schemas.github import (
     BareRepositoryCreateRequest,
     RepositoryCreationResponse,
@@ -16,6 +17,23 @@ from app.services.github_manager import GitHubManagerError, github_manager
 
 router = APIRouter()
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+
+
+@router.post("/auth/login", response_model=MessageResponse, tags=["Auth"])
+async def login(payload: LoginRequest, request: Request, response: Response) -> MessageResponse:
+    settings = request.app.state.settings
+    if not login_allowed(request.client.host if request.client else "unknown"):
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em um minuto.")
+    if not settings.AUTH_PASSWORD or not settings.SESSION_SECRET or payload.username != settings.AUTH_USERNAME or payload.password != settings.AUTH_PASSWORD:
+        raise HTTPException(status_code=401, detail="Credenciais invalidas.")
+    response.set_cookie("session", create_session(payload.username, settings.SESSION_SECRET, settings.SESSION_TTL_SECONDS), httponly=True, secure=settings.AUTH_COOKIE_SECURE, samesite="lax", max_age=settings.SESSION_TTL_SECONDS)
+    return MessageResponse(message="Login realizado.")
+
+
+@router.post("/auth/logout", response_model=MessageResponse, tags=["Auth"])
+async def logout(response: Response) -> MessageResponse:
+    response.delete_cookie("session")
+    return MessageResponse(message="Logout realizado.")
 
 
 @router.get(

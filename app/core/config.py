@@ -18,6 +18,11 @@ class Settings:
     TEMPLATE_SUFFIX = os.getenv("TEMPLATE_SUFFIX", "-template")
     DEFAULT_BRANCH = os.getenv("DEFAULT_BRANCH", "main")
     GH_TIMEOUT_SECONDS = int(os.getenv("GH_TIMEOUT_SECONDS", "120"))
+    AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
+    AUTH_PASSWORD = os.getenv("AUTH_PASSWORD")
+    SESSION_SECRET = os.getenv("SESSION_SECRET")
+    SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "28800"))
+    AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "true").lower() in {"1", "true", "yes"}
 
 
 settings = Settings()
