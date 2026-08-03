@@ -8,7 +8,12 @@ let activeCreationId = "";
 
 function isPostgresTemplateName(value) {
   const normalized = String(value || "").toLowerCase();
-  return ["postgres", "postgresql", "database", "migration", "db"].some((token) => normalized.includes(token));
+  return normalized.includes("postgres") || normalized.includes("postgresql");
+}
+
+function isMongoTemplateName(value) {
+  const normalized = String(value || "").toLowerCase();
+  return normalized.includes("mongodb") || normalized.includes("mongo");
 }
 
 function pretty(v) {
@@ -42,16 +47,23 @@ function syncTemplateWarning() {
   const warning = $("#templateWarning");
   const suffix = $("#nameSuffix");
   const postgres = $("#postgresFields");
+  const mongodb = $("#mongodbFields");
   const input = $("#repoName");
   if (!warning) return;
   const selected = $("#templateSelect")?.value || "";
-  const show = mode === "template" && isPostgresTemplateName(selected);
+  const showPostgres = mode === "template" && isPostgresTemplateName(selected);
+  const showMongo = mode === "template" && isMongoTemplateName(selected);
+  const show = showPostgres || showMongo;
   warning.classList.toggle("is-hidden", !show);
   suffix?.classList.toggle("is-hidden", !show);
   input?.classList.toggle("with-suffix", show);
-  postgres?.classList.toggle("is-hidden", !show);
+  postgres?.classList.toggle("is-hidden", !showPostgres);
+  mongodb?.classList.toggle("is-hidden", !showMongo);
   postgres?.querySelectorAll("input").forEach((input) => {
-    input.required = show;
+    input.required = showPostgres;
+  });
+  mongodb?.querySelectorAll("input").forEach((input) => {
+    input.required = showMongo;
   });
   input.placeholder = show ? "ms-orders" : "ms-orders-api";
 }
@@ -212,7 +224,7 @@ function collectPayload() {
   if (!raw.description) delete raw.description;
   if (mode === "bare") {
     delete raw.template_name;
-    Object.keys(raw).filter((key) => key.startsWith("postgres_")).forEach((key) => delete raw[key]);
+    Object.keys(raw).filter((key) => key.startsWith("postgres_") || key.startsWith("mongodb_")).forEach((key) => delete raw[key]);
     raw.language = "generic";
     return raw;
   }
@@ -229,13 +241,24 @@ function collectPayload() {
       root_password: raw.postgres_root_password,
     };
   }
-  Object.keys(raw).filter((key) => key.startsWith("postgres_")).forEach((key) => delete raw[key]);
+  if (isMongoTemplateName(raw.template_name || "")) {
+    raw.name = `${String(raw.name || "").replace(/-database$/i, "").slice(0, 91)}-database`;
+    raw.mongodb = {
+      host: raw.mongodb_host,
+      port: Number(raw.mongodb_port),
+      database: raw.mongodb_database,
+      user: raw.mongodb_user,
+      password: raw.mongodb_password,
+      auth_database: raw.mongodb_auth_database,
+    };
+  }
+  Object.keys(raw).filter((key) => key.startsWith("postgres_") || key.startsWith("mongodb_")).forEach((key) => delete raw[key]);
   delete raw.language;
   return raw;
 }
 
 function validateBeforeSubmit(payload) {
-  if (mode === "template" && isPostgresTemplateName(payload.template_name || "") && !String(payload.name || "").replace(/-database$/i, "").trim()) {
+  if (mode === "template" && (isPostgresTemplateName(payload.template_name || "") || isMongoTemplateName(payload.template_name || "")) && !String(payload.name || "").replace(/-database$/i, "").trim()) {
     throw new Error("Informe o nome base do repositorio antes do sufixo '-database'.");
   }
 }
@@ -250,6 +273,7 @@ async function submitCreation(event) {
     safePayload.postgres.password = "[oculta]";
     safePayload.postgres.root_password = "[oculta]";
   }
+  if (safePayload.mongodb) safePayload.mongodb.password = "[oculta]";
   setOutput("#resultBox", { status: "sending", payload: safePayload });
   try {
     const data = await req(url, { method: "POST", body: JSON.stringify(payload) });

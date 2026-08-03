@@ -64,7 +64,7 @@
 
             <p class="hint" id="modeHint">Cria um repositorio cru com `.gitignore` e workflow generico por padrao.</p>
             <p class="template-warning is-hidden" id="templateWarning">
-              Template PostgreSQL detectado. O nome do repositorio deve terminar com <code>-database</code>.
+              Template de banco detectado. O nome do repositorio deve terminar com <code>-database</code>.
             </p>
             <fieldset class="postgres-fields is-hidden" id="postgresFields">
               <legend>Conexao PostgreSQL</legend>
@@ -78,6 +78,18 @@
                 <label class="field"><span>Banco administrativo</span><input name="postgres_root_database" value="postgres" /></label>
                 <label class="field"><span>Usuario administrativo</span><input name="postgres_root_user" placeholder="postgres" /></label>
                 <label class="field"><span>Senha administrativa</span><input name="postgres_root_password" type="password" autocomplete="new-password" /></label>
+              </div>
+            </fieldset>
+            <fieldset class="postgres-fields is-hidden" id="mongodbFields">
+              <legend>Conexao MongoDB</legend>
+              <p>Os valores serao salvos como GitHub Actions secrets do novo repositorio.</p>
+              <div class="field-grid">
+                <label class="field"><span>Host</span><input name="mongodb_host" placeholder="mongo.exemplo.com" /></label>
+                <label class="field"><span>Porta</span><input name="mongodb_port" type="number" value="27017" min="1" max="65535" /></label>
+                <label class="field"><span>Banco</span><input name="mongodb_database" placeholder="orders" /></label>
+                <label class="field"><span>Usuario</span><input name="mongodb_user" placeholder="orders" /></label>
+                <label class="field"><span>Senha</span><input name="mongodb_password" type="password" autocomplete="new-password" /></label>
+                <label class="field"><span>Banco de autenticacao</span><input name="mongodb_auth_database" value="admin" /></label>
               </div>
             </fieldset>
 

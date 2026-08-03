@@ -10,7 +10,12 @@ CreationStatusValue = Literal["queued", "running", "done", "failed"]
 
 def _is_postgres_template(template_name: str) -> bool:
     normalized = template_name.lower()
-    return any(token in normalized for token in ("postgres", "postgresql", "database", "migration", "db"))
+    return "postgres" in normalized or "postgresql" in normalized
+
+
+def _is_mongodb_template(template_name: str) -> bool:
+    normalized = template_name.lower()
+    return "mongodb" in normalized or "mongo" in normalized
 
 
 def _validate_database_suffix(name: str) -> str:
@@ -104,12 +109,22 @@ class PostgresConnection(BaseModel):
     root_password: str = Field(..., min_length=1, max_length=256)
 
 
+class MongoConnection(BaseModel):
+    host: str = Field(..., min_length=1, max_length=253)
+    port: int = Field(default=27017, ge=1, le=65535)
+    database: str = Field(..., min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_-]+$")
+    user: str = Field(..., min_length=1, max_length=128)
+    password: str = Field(..., min_length=1, max_length=256)
+    auth_database: str = Field(default="admin", min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_-]+$")
+
+
 class TemplateRepositoryCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
     template_name: str = Field(..., min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
     description: str | None = Field(default=None, max_length=350)
     visibility: RepositoryVisibility = "private"
     postgres: PostgresConnection | None = None
+    mongodb: MongoConnection | None = None
 
     model_config = {
         "json_schema_extra": {
@@ -128,6 +143,10 @@ class TemplateRepositoryCreateRequest(BaseModel):
             _validate_database_suffix(self.name)
             if self.postgres is None:
                 raise ValueError("Informe a conexao PostgreSQL para o template de banco.")
+        if _is_mongodb_template(self.template_name):
+            _validate_database_suffix(self.name)
+            if self.mongodb is None:
+                raise ValueError("Informe a conexao MongoDB para o template de banco.")
         return self
 
 

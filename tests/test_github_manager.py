@@ -5,6 +5,7 @@ import pytest
 
 from app.schemas.github import (
     BareRepositoryCreateRequest,
+    MongoConnection,
     PostgresConnection,
     TemplateRepositoryCreateRequest,
     TemplateResponse,
@@ -191,6 +192,10 @@ def _postgres_connection():
     )
 
 
+def _mongodb_connection():
+    return MongoConnection(host="mongo.example.test", database="orders-qa", user="orders", password="mongo-password")
+
+
 def test_repository_file_operations(manager):
     from github.GithubException import UnknownObjectException
 
@@ -253,6 +258,9 @@ def test_repository_readiness_and_template_validation(manager):
     asyncio.run(run())
     assert repo.branch.protection["required_approving_review_count"] == 1
     assert "sql" in repo.branch.protection["contexts"]
+
+    manager._protect_main_branch_sync("orders", "mongodb")
+    assert repo.branch.protection["contexts"] == ["ci", "conventional-commits", "sql"]
 
 
 def test_android_template_helpers(manager):
@@ -401,6 +409,26 @@ def test_configures_postgres_secrets(manager):
     assert secrets["POSTGRES_ROOT_DB"] == "postgres"
     assert secrets["POSTGRES_ROOT_USER"] == "postgres"
     assert secrets["POSTGRES_ROOT_PASSWORD"] == "root-password"
+
+
+def test_configures_mongodb_secrets(manager):
+    secrets = {}
+
+    class Repo:
+        def create_secret(self, name, value):
+            secrets[name] = value
+
+    manager._repo = lambda _: Repo()
+    manager._configure_mongodb_secrets_sync("orders-database", _mongodb_connection())
+
+    assert secrets == {
+        "MONGODB_HOST": "mongo.example.test",
+        "MONGODB_PORT": "27017",
+        "MONGODB_DB": "orders-qa",
+        "MONGODB_USER": "orders",
+        "MONGODB_PASSWORD": "mongo-password",
+        "MONGODB_AUTH_DB": "admin",
+    }
 
 
 def test_debug_logging_paths(manager, monkeypatch):

@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.schemas.github import (
     BareRepositoryCreateRequest,
+    MongoConnection,
     PostgresConnection,
     TemplateRepositoryCreateRequest,
 )
@@ -47,6 +48,26 @@ def test_postgres_template_accepts_connection():
 def test_non_postgres_template_allows_regular_name():
     request = TemplateRepositoryCreateRequest(name="orders", template_name="ms-fastapi-template")
     assert request.name == "orders"
+
+
+def test_mongodb_template_requires_and_accepts_connection():
+    with pytest.raises(ValidationError, match="MongoDB"):
+        TemplateRepositoryCreateRequest(name="orders-database", template_name="mongodb-database-template")
+
+    request = TemplateRepositoryCreateRequest(
+        name="orders-database",
+        template_name="mongodb-database-template",
+        mongodb=MongoConnection(host="mongo.example.test", database="orders-qa", user="orders", password="secret"),
+    )
+    assert request.mongodb.port == 27017
+
+
+@pytest.mark.parametrize(("field", "value"), [("database", "orders.db"), ("auth_database", "admin$db")])
+def test_mongodb_rejects_invalid_database_names(field, value):
+    data = {"host": "mongo.example.test", "database": "orders", "user": "orders", "password": "secret"}
+    data[field] = value
+    with pytest.raises(ValidationError, match="String should match pattern"):
+        MongoConnection(**data)
 
 
 @pytest.mark.parametrize(
