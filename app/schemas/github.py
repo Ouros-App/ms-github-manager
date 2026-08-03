@@ -110,12 +110,7 @@ class PostgresConnection(BaseModel):
 
 
 class MongoConnection(BaseModel):
-    host: str = Field(..., min_length=1, max_length=253)
-    port: int = Field(default=27017, ge=1, le=65535)
-    database: str = Field(..., min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_-]+$")
-    user: str = Field(..., min_length=1, max_length=128)
-    password: str = Field(..., min_length=1, max_length=256)
-    auth_database: str = Field(default="admin", min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_-]+$")
+    connection_url: str = Field(..., min_length=14, max_length=2048, pattern=r"^mongodb(?:\+srv)?://.+")
 
 
 class TemplateRepositoryCreateRequest(BaseModel):

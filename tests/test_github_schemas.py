@@ -57,17 +57,14 @@ def test_mongodb_template_requires_and_accepts_connection():
     request = TemplateRepositoryCreateRequest(
         name="orders-database",
         template_name="mongodb-database-template",
-        mongodb=MongoConnection(host="mongo.example.test", database="orders-qa", user="orders", password="secret"),
+        mongodb=MongoConnection(connection_url="mongodb://orders:secret@mongo.example.test:27017/orders-qa"),
     )
-    assert request.mongodb.port == 27017
+    assert request.mongodb.connection_url.startswith("mongodb://")
 
 
-@pytest.mark.parametrize(("field", "value"), [("database", "orders.db"), ("auth_database", "admin$db")])
-def test_mongodb_rejects_invalid_database_names(field, value):
-    data = {"host": "mongo.example.test", "database": "orders", "user": "orders", "password": "secret"}
-    data[field] = value
+def test_mongodb_rejects_invalid_connection_url():
     with pytest.raises(ValidationError, match="String should match pattern"):
-        MongoConnection(**data)
+        MongoConnection(connection_url="postgresql://mongo.example.test/orders")
 
 
 @pytest.mark.parametrize(

@@ -193,7 +193,7 @@ def _postgres_connection():
 
 
 def _mongodb_connection():
-    return MongoConnection(host="mongo.example.test", database="orders-qa", user="orders", password="mongo-password")
+    return MongoConnection(connection_url="mongodb://orders:mongo-password@mongo.example.test:27017/orders-qa")
 
 
 def test_repository_file_operations(manager):
@@ -421,14 +421,7 @@ def test_configures_mongodb_secrets(manager):
     manager._repo = lambda _: Repo()
     manager._configure_mongodb_secrets_sync("orders-database", _mongodb_connection())
 
-    assert secrets == {
-        "MONGODB_HOST": "mongo.example.test",
-        "MONGODB_PORT": "27017",
-        "MONGODB_DB": "orders-qa",
-        "MONGODB_USER": "orders",
-        "MONGODB_PASSWORD": "mongo-password",
-        "MONGODB_AUTH_DB": "admin",
-    }
+    assert secrets == {"MONGODB_URI": "mongodb://orders:mongo-password@mongo.example.test:27017/orders-qa"}
 
 
 def test_debug_logging_paths(manager, monkeypatch):
