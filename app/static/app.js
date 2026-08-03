@@ -173,6 +173,17 @@ async function login(event) {
   }
 }
 
+async function restoreSession() {
+  try {
+    await req("/auth/session");
+    $("#loginPanel").classList.add("is-hidden");
+    $("#protectedApp").classList.remove("is-hidden");
+    await loadTemplates();
+  } catch {
+    // Login panel remains visible when the session is absent or expired.
+  }
+}
+
 async function loadTemplates() {
   const list = $("#templatesList");
   const select = $("#templateSelect");
@@ -321,3 +332,4 @@ $("#stopTracking").addEventListener("click", () => {
 
 setMode("bare");
 loadHealth();
+restoreSession();

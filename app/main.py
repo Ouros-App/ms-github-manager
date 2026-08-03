@@ -35,7 +35,7 @@ app.state.settings = settings
 
 @app.middleware("http")
 async def require_session(request: Request, call_next):
-    public = request.url.path in {"/health", "/ui", "/auth/login", "/auth/logout"} or request.url.path.startswith("/static/")
+    public = request.url.path in {"/health", "/ui", "/auth/login", "/auth/logout", "/auth/session"} or request.url.path.startswith("/static/")
     if not public and not is_authenticated(request):
         return JSONResponse(status_code=401, content={"detail": "Autenticacao necessaria."})
     return await call_next(request)

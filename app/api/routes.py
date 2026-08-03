@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, RedirectResponse
 
-from app.core.auth import create_session, login_allowed
+from app.core.auth import create_session, is_authenticated, login_allowed
 from app.core.config import settings
 from app.schemas.common import HealthResponse, LoginRequest, MessageResponse
 from app.schemas.github import (
@@ -26,8 +26,15 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
         raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em um minuto.")
     if not settings.AUTH_PASSWORD or not settings.SESSION_SECRET or payload.username != settings.AUTH_USERNAME or payload.password != settings.AUTH_PASSWORD:
         raise HTTPException(status_code=401, detail="Credenciais invalidas.")
-    response.set_cookie("session", create_session(payload.username, settings.SESSION_SECRET, settings.SESSION_TTL_SECONDS), httponly=True, secure=settings.AUTH_COOKIE_SECURE, samesite="lax", max_age=settings.SESSION_TTL_SECONDS)
+    response.set_cookie("session", create_session(settings.SESSION_SECRET, settings.SESSION_TTL_SECONDS), httponly=True, secure=settings.AUTH_COOKIE_SECURE, samesite="lax", max_age=settings.SESSION_TTL_SECONDS)
     return MessageResponse(message="Login realizado.")
+
+
+@router.get("/auth/session", response_model=MessageResponse, tags=["Auth"])
+async def session_status(request: Request) -> MessageResponse:
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401, detail="Sessao invalida.")
+    return MessageResponse(message="Sessao valida.")
 
 
 @router.post("/auth/logout", response_model=MessageResponse, tags=["Auth"])

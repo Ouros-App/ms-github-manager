@@ -9,6 +9,7 @@ from fastapi import Request
 _attempts: dict[str, deque[float]] = defaultdict(deque)
 _WINDOW = 60
 _MAX_ATTEMPTS = 10
+_MAX_IPS = 10_000
 
 
 def _encode(value: str) -> str:
@@ -21,6 +22,11 @@ def _decode(value: str) -> str:
 
 def login_allowed(ip: str) -> bool:
     now = time.time()
+    for key in list(_attempts):
+        if not _attempts[key] or _attempts[key][-1] <= now - _WINDOW:
+            del _attempts[key]
+    if ip not in _attempts and len(_attempts) >= _MAX_IPS:
+        return False
     attempts = _attempts[ip]
     while attempts and attempts[0] <= now - _WINDOW:
         attempts.popleft()
@@ -30,8 +36,8 @@ def login_allowed(ip: str) -> bool:
     return True
 
 
-def create_session(username: str, secret: str, ttl: int) -> str:
-    payload = f"{username}|{int(time.time()) + ttl}"
+def create_session(secret: str, ttl: int) -> str:
+    payload = f"session|{int(time.time()) + ttl}"
     encoded = _encode(payload)
     signature = hmac.new(secret.encode(), encoded.encode(), hashlib.sha256).hexdigest()
     return f"{encoded}.{signature}"

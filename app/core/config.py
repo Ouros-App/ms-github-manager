@@ -5,6 +5,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _positive_int(name: str, value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise ValueError(f"{name} deve ser maior que zero.")
+    return parsed
+
+
+def _strict_bool(name: str, value: str) -> bool:
+    if value.lower() not in {"true", "false"}:
+        raise ValueError(f"{name} deve ser true ou false.")
+    return value.lower() == "true"
+
+
 class Settings:
     PROJECT_NAME = os.getenv("PROJECT_NAME", "Ouros GitHub Repository Manager")
     DESCRIPTION = os.getenv(
@@ -21,8 +34,8 @@ class Settings:
     AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
     AUTH_PASSWORD = os.getenv("AUTH_PASSWORD")
     SESSION_SECRET = os.getenv("SESSION_SECRET")
-    SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "28800"))
-    AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "true").lower() in {"1", "true", "yes"}
+    SESSION_TTL_SECONDS = _positive_int("SESSION_TTL_SECONDS", os.getenv("SESSION_TTL_SECONDS", "28800"))
+    AUTH_COOKIE_SECURE = _strict_bool("AUTH_COOKIE_SECURE", os.getenv("AUTH_COOKIE_SECURE", "true"))
 
 
 settings = Settings()
