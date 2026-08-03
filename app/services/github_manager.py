@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from github import Auth, Github
@@ -1207,7 +1208,10 @@ class ExampleUnitTest {{
     def _configure_mongodb_secrets_sync(self, repository_name: str, connection: MongoConnection | None) -> None:
         if connection is None:
             return
-        values = {"MONGODB_URI": connection.connection_url}
+        parts = urlsplit(connection.connection_url)
+        database = repository_name.removesuffix("-database")
+        uri = connection.connection_url if parts.path.strip("/") else urlunsplit(parts._replace(path=f"/{database}"))
+        values = {"MONGODB_URI": uri}
         repo = self._repo(repository_name)
         for name, value in values.items():
             repo.create_secret(name, value)

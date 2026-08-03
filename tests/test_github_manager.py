@@ -424,6 +424,22 @@ def test_configures_mongodb_secrets(manager):
     assert secrets == {"MONGODB_URI": "mongodb://orders:mongo-password@mongo.example.test:27017/orders-qa"}
 
 
+def test_configures_mongodb_uri_database_from_repository_name(manager):
+    secrets = {}
+
+    class Repo:
+        def create_secret(self, name, value):
+            secrets[name] = value
+
+    manager._repo = lambda _: Repo()
+    manager._configure_mongodb_secrets_sync(
+        "mongdb-qa-database",
+        MongoConnection(connection_url="mongodb+srv://user:password@cluster.mongodb.net"),
+    )
+
+    assert secrets["MONGODB_URI"] == "mongodb+srv://user:password@cluster.mongodb.net/mongdb-qa"
+
+
 def test_debug_logging_paths(manager, monkeypatch):
     import app.services.github_manager as manager_module
 
