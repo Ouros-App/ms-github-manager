@@ -1162,6 +1162,8 @@ class ExampleUnitTest {{
 
     def _template_language(self, template_name: str) -> str:
         normalized_name = template_name.lower()
+        if "mongo" in normalized_name and ("postgres" in normalized_name or "postgresql" in normalized_name):
+            raise ValueError("O template nao pode ser classificado simultaneamente como PostgreSQL e MongoDB.")
         if DEBUG:
             logger.debug(f"[_template_language] template_name={template_name} normalized={normalized_name}")
         for language, keywords in self._TEMPLATE_KEYWORDS:

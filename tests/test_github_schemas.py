@@ -67,6 +67,16 @@ def test_mongodb_rejects_invalid_connection_url():
         MongoConnection(connection_url="postgresql://mongo.example.test/orders")
 
 
+def test_mongodb_rejects_connection_url_without_host():
+    with pytest.raises(ValidationError, match="deve informar um host"):
+        MongoConnection(connection_url="mongodb://?authSource=admin")
+
+
+def test_template_rejects_ambiguous_database_type():
+    with pytest.raises(ValidationError, match="simultaneamente"):
+        TemplateRepositoryCreateRequest(name="orders-database", template_name="mongodb-postgres-template")
+
+
 @pytest.mark.parametrize(
     ("template_name", "expected"),
     [

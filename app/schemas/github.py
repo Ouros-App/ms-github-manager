@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -20,7 +21,7 @@ def _is_mongodb_template(template_name: str) -> bool:
 
 def _validate_database_suffix(name: str) -> str:
     if not name.lower().endswith("-database"):
-        raise ValueError("Repositorios PostgreSQL devem terminar com '-database'.")
+        raise ValueError("Repositorios de banco devem terminar com '-database'.")
     return name
 
 
@@ -112,6 +113,12 @@ class PostgresConnection(BaseModel):
 class MongoConnection(BaseModel):
     connection_url: str = Field(..., min_length=14, max_length=2048, pattern=r"^mongodb(?:\+srv)?://.+")
 
+    @model_validator(mode="after")
+    def validate_connection_url(self) -> "MongoConnection":
+        if urlsplit(self.connection_url).hostname is None:
+            raise ValueError("A URL MongoDB deve informar um host.")
+        return self
+
 
 class TemplateRepositoryCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
@@ -134,11 +141,15 @@ class TemplateRepositoryCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_postgres_template_name(self) -> "TemplateRepositoryCreateRequest":
-        if _is_postgres_template(self.template_name):
+        is_postgres = _is_postgres_template(self.template_name)
+        is_mongodb = _is_mongodb_template(self.template_name)
+        if is_postgres and is_mongodb:
+            raise ValueError("O template nao pode ser classificado simultaneamente como PostgreSQL e MongoDB.")
+        if is_postgres:
             _validate_database_suffix(self.name)
             if self.postgres is None:
                 raise ValueError("Informe a conexao PostgreSQL para o template de banco.")
-        if _is_mongodb_template(self.template_name):
+        if is_mongodb:
             _validate_database_suffix(self.name)
             if self.mongodb is None:
                 raise ValueError("Informe a conexao MongoDB para o template de banco.")

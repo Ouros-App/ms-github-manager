@@ -457,6 +457,11 @@ def test_debug_logging_paths(manager, monkeypatch):
     assert manager._template_language("generic-template") == "generic"
 
 
+def test_template_language_rejects_ambiguous_name(manager):
+    with pytest.raises(ValueError, match="simultaneamente"):
+        manager._template_language("mongodb-postgres-template")
+
+
 @pytest.mark.parametrize("mode", ["bare", "template"])
 def test_creation_failure_marks_status(manager, mode):
     async def run():

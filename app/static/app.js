@@ -51,8 +51,10 @@ function syncTemplateWarning() {
   const input = $("#repoName");
   if (!warning) return;
   const selected = $("#templateSelect")?.value || "";
-  const showPostgres = mode === "template" && isPostgresTemplateName(selected);
-  const showMongo = mode === "template" && isMongoTemplateName(selected);
+  const isPostgres = isPostgresTemplateName(selected);
+  const isMongo = isMongoTemplateName(selected);
+  const showPostgres = mode === "template" && isPostgres && !isMongo;
+  const showMongo = mode === "template" && isMongo && !isPostgres;
   const show = showPostgres || showMongo;
   warning.classList.toggle("is-hidden", !show);
   suffix?.classList.toggle("is-hidden", !show);
