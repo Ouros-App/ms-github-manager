@@ -3,6 +3,16 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 
+def authenticated_client(app):
+    app.state.settings.AUTH_USERNAME = "admin"
+    app.state.settings.AUTH_PASSWORD = "password"
+    app.state.settings.SESSION_SECRET = "test-session-secret"
+    app.state.settings.AUTH_COOKIE_SECURE = False
+    client = TestClient(app)
+    assert client.post("/auth/login", json={"username": "admin", "password": "password"}).status_code == 200
+    return client
+
+
 def test_health_endpoint(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "test")
     from app.main import app
@@ -17,7 +27,7 @@ def test_root_endpoint(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "test")
     from app.main import app
 
-    response = TestClient(app).get("/")
+    response = authenticated_client(app).get("/")
 
     assert response.status_code == 200
     assert response.json()["message"] == "Ouros GitHub Repository Manager is running"
@@ -55,7 +65,7 @@ def test_repository_endpoints(monkeypatch):
             )
 
     monkeypatch.setattr(routes, "github_manager", Manager())
-    client = TestClient(app)
+    client = authenticated_client(app)
 
     assert client.get("/templates").json() == []
     assert client.post("/repositories/bare", json={"name": "orders"}).status_code == 202
@@ -73,7 +83,7 @@ def test_validation_error_hides_postgres_password(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "test")
     from app.main import app
 
-    response = TestClient(app).post(
+    response = authenticated_client(app).post(
         "/repositories/from-template",
         json={
             "name": "orders-database",
@@ -99,7 +109,7 @@ def test_validation_error_with_context_returns_422(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "test")
     from app.main import app
 
-    response = TestClient(app).post(
+    response = authenticated_client(app).post(
         "/repositories/from-template",
         json={
             "name": "orders",

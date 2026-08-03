@@ -158,6 +158,32 @@ async function loadHealth() {
   }
 }
 
+async function login(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const error = $("#loginError");
+  try {
+    await req("/auth/login", { method: "POST", body: JSON.stringify(data) });
+    $("#loginPanel").classList.add("is-hidden");
+    $("#protectedApp").classList.remove("is-hidden");
+    await loadTemplates();
+  } catch (err) {
+    error.textContent = err.message;
+    error.classList.remove("is-hidden");
+  }
+}
+
+async function restoreSession() {
+  try {
+    await req("/auth/session");
+    $("#loginPanel").classList.add("is-hidden");
+    $("#protectedApp").classList.remove("is-hidden");
+    await loadTemplates();
+  } catch {
+    // Login panel remains visible when the session is absent or expired.
+  }
+}
+
 async function loadTemplates() {
   const list = $("#templatesList");
   const select = $("#templateSelect");
@@ -191,6 +217,7 @@ async function loadTemplates() {
     }
     syncTemplateWarning();
   } catch (err) {
+    if (err.message.includes("Autenticacao necessaria")) return;
     list.innerHTML = '<div class="template-card empty">Falha ao carregar templates.</div>';
     setOutput("#resultBox", { error: err.message });
   }
@@ -291,6 +318,7 @@ modeBtns.forEach((btn) => {
 });
 
 form.addEventListener("submit", submitCreation);
+$("#loginForm").addEventListener("submit", login);
 
 $("#refreshTemplates").addEventListener("click", loadTemplates);
 $("#resetBtn").addEventListener("click", resetForm);
@@ -304,4 +332,4 @@ $("#stopTracking").addEventListener("click", () => {
 
 setMode("bare");
 loadHealth();
-loadTemplates();
+restoreSession();

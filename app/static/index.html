@@ -22,7 +22,17 @@
         </div>
       </header>
 
-      <section class="main-grid">
+      <section class="card" id="loginPanel">
+        <div class="card-header"><div><span class="eyebrow">Acesso protegido</span><h2>Entrar</h2></div></div>
+        <form id="loginForm" class="repo-form">
+          <label class="field"><span>Usuario</span><input name="username" autocomplete="username" required /></label>
+          <label class="field"><span>Senha</span><input name="password" type="password" autocomplete="current-password" required /></label>
+          <p class="template-warning is-hidden" id="loginError"></p>
+          <button type="submit">Entrar</button>
+        </form>
+      </section>
+
+      <section class="main-grid is-hidden" id="protectedApp">
         <section class="card create-card">
           <div class="card-header">
             <div>

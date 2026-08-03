@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
+from app.core.auth import is_authenticated
 from app.core.config import settings
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -29,6 +30,15 @@ app = FastAPI(
         {"name": "Repositories", "description": "Criacao e acompanhamento de repositorios GitHub."},
     ],
 )
+app.state.settings = settings
+
+
+@app.middleware("http")
+async def require_session(request: Request, call_next):
+    public = request.url.path in {"/health", "/ui", "/auth/login", "/auth/logout", "/auth/session"} or request.url.path.startswith("/static/")
+    if not public and not is_authenticated(request):
+        return JSONResponse(status_code=401, content={"detail": "Autenticacao necessaria."})
+    return await call_next(request)
 
 
 @app.exception_handler(RequestValidationError)
