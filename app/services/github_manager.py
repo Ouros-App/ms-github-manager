@@ -51,6 +51,9 @@ class CreationState:
 
 class GitHubRepositoryManager:
     _WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "templates" / "workflows"
+    _RERUN_CI_LABEL = "rerun-ci"
+    _RERUN_CI_LABEL_COLOR = "0e8a16"
+    _RERUN_CI_LABEL_DESCRIPTION = "Remova e adicione novamente para executar a CI da PR."
     _REPOSITORY_READY_INTERVAL_SECONDS = 2
     _README_PATH = "README.md"
     _TEMPLATE_SUFFIX_PATTERN = r"[-_.]?template$"
@@ -150,6 +153,9 @@ class GitHubRepositoryManager:
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(self._put_workflow_sync, repo.name, payload.language)
 
+            await self._step(creation_id, "Configurando label de reexecucao da CI")
+            await asyncio.to_thread(self._ensure_rerun_ci_label_sync, repo.name)
+
             await self._step(creation_id, "Aplicando protecao da branch main")
             await asyncio.to_thread(self._protect_main_branch_sync, repo.name, payload.language)
 
@@ -210,6 +216,9 @@ class GitHubRepositoryManager:
                 repo.name,
                 template_language,
             )
+
+            await self._step(creation_id, "Configurando label de reexecucao da CI")
+            await asyncio.to_thread(self._ensure_rerun_ci_label_sync, repo.name)
 
             await self._step(creation_id, "Aplicando protecao da branch main")
             await asyncio.to_thread(self._protect_main_branch_sync, repo.name, template_language)
@@ -297,6 +306,17 @@ class GitHubRepositoryManager:
             workflow_content,
             "Configure CI/CD",
         )
+
+    def _ensure_rerun_ci_label_sync(self, repository_name: str) -> None:
+        repo = self._repo(repository_name)
+        try:
+            repo.get_label(self._RERUN_CI_LABEL)
+        except UnknownObjectException:
+            repo.create_label(
+                name=self._RERUN_CI_LABEL,
+                color=self._RERUN_CI_LABEL_COLOR,
+                description=self._RERUN_CI_LABEL_DESCRIPTION,
+            )
 
     def _github_description(self, value: str | None) -> str:
         return re.sub(r"[\x00-\x1f\x7f]+", " ", value or "").strip()
