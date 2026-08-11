@@ -105,7 +105,10 @@ def test_android_names_and_placeholders(manager):
 
 
 def test_workflow_and_gitignore_helpers(manager):
-    assert "pytest" in manager._workflow("fastapi")
+    workflow = manager._workflow("fastapi")
+    assert "pytest" in workflow
+    assert "types: [opened, synchronize, reopened, labeled]" in workflow
+    assert "github.event.label.name == 'rerun-ci'" in workflow
     assert manager._workflow("unknown") == manager._workflow("generic")
     assert manager._gitignore_template("fastapi") == "Python"
     assert manager._gitignore_template("unknown") is None
@@ -124,6 +127,7 @@ def test_bare_creation_flow(manager, language):
         manager._configure_postgres_secrets_sync = lambda *_: None
         manager._put_file_sync = lambda *_: None
         manager._put_workflow_sync = lambda *_: None
+        manager._ensure_rerun_ci_label_sync = lambda _: None
         manager._protect_main_branch_sync = lambda *_: None
         manager._create_sonarcloud_project_sync = lambda _: None
 
@@ -156,6 +160,7 @@ def test_template_creation_flow(manager, template_name):
         manager._put_postgres_scaffold_sync = lambda _: None
         manager._configure_postgres_secrets_sync = lambda *_: None
         manager._put_workflow_sync = lambda *_: None
+        manager._ensure_rerun_ci_label_sync = lambda _: None
         manager._protect_main_branch_sync = lambda *_: None
         manager._create_sonarcloud_project_sync = lambda _: None
 
@@ -222,6 +227,28 @@ def test_repository_file_operations(manager):
     manager._delete_path_sync("orders", "exists.txt")
 
     assert [call[0] for call in calls] == ["update", "create", "delete"]
+
+
+def test_creates_rerun_ci_label_when_missing(manager):
+    from github.GithubException import UnknownObjectException
+
+    calls = []
+
+    class Repo:
+        def get_label(self, _):
+            raise UnknownObjectException(404, {"message": "Not Found"}, None)
+
+        def create_label(self, **kwargs):
+            calls.append(kwargs)
+
+    manager._repo = lambda _: Repo()
+    manager._ensure_rerun_ci_label_sync("orders")
+
+    assert calls == [{
+        "name": "rerun-ci",
+        "color": "0e8a16",
+        "description": "Remova e adicione novamente para executar a CI da PR.",
+    }]
 
 
 def test_repository_readiness_and_template_validation(manager):
