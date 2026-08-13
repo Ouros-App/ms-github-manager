@@ -51,6 +51,7 @@ class CreationState:
 
 class GitHubRepositoryManager:
     _WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "templates" / "workflows"
+    _PR_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / ".github" / "PULL_REQUEST_TEMPLATE"
     _RERUN_CI_LABEL = "rerun-ci"
     _RERUN_CI_LABEL_COLOR = "0e8a16"
     _RERUN_CI_LABEL_DESCRIPTION = "Remova e adicione novamente para executar a CI da PR."
@@ -153,6 +154,9 @@ class GitHubRepositoryManager:
             await self._step(creation_id, "Aplicando CI/CD")
             await asyncio.to_thread(self._put_workflow_sync, repo.name, payload.language)
 
+            await self._step(creation_id, "Aplicando templates de pull request")
+            await asyncio.to_thread(self._put_pr_templates_sync, repo.name)
+
             await self._step(creation_id, "Configurando label de reexecucao da CI")
             await asyncio.to_thread(self._ensure_rerun_ci_label_sync, repo.name)
 
@@ -216,6 +220,9 @@ class GitHubRepositoryManager:
                 repo.name,
                 template_language,
             )
+
+            await self._step(creation_id, "Aplicando templates de pull request")
+            await asyncio.to_thread(self._put_pr_templates_sync, repo.name)
 
             await self._step(creation_id, "Configurando label de reexecucao da CI")
             await asyncio.to_thread(self._ensure_rerun_ci_label_sync, repo.name)
@@ -306,6 +313,15 @@ class GitHubRepositoryManager:
             workflow_content,
             "Configure CI/CD",
         )
+
+    def _put_pr_templates_sync(self, repository_name: str) -> None:
+        for path in sorted(self._PR_TEMPLATES_DIR.glob("*.md")):
+            self._put_file_sync(
+                repository_name,
+                f".github/PULL_REQUEST_TEMPLATE/{path.name}",
+                path.read_text(encoding="utf-8"),
+                f"chore: add pull request template {path.stem}",
+            )
 
     def _ensure_rerun_ci_label_sync(self, repository_name: str) -> None:
         repo = self._repo(repository_name)
@@ -1041,7 +1057,7 @@ class ExampleUnitTest {{
 
     def _protect_main_branch_sync(self, repository_name: str, language: str = "generic") -> None:
         repo = self._repo(repository_name)
-        contexts = ["ci", "conventional-commits"]
+        contexts = ["ci"]
         if language != "mongodb":
             contexts.extend(["sonarcloud", "codeql"])
         if language in {"postgres", "mongodb"}:

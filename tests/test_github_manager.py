@@ -107,11 +107,29 @@ def test_android_names_and_placeholders(manager):
 def test_workflow_and_gitignore_helpers(manager):
     workflow = manager._workflow("fastapi")
     assert "pytest" in workflow
+    assert "actions/github-script@v7" in workflow
+    assert 'conclusion: valid ? "success" : "neutral"' in workflow
     assert "types: [opened, synchronize, reopened, labeled]" in workflow
     assert "github.event.label.name == 'rerun-ci'" in workflow
     assert manager._workflow("unknown") == manager._workflow("generic")
     assert manager._gitignore_template("fastapi") == "Python"
     assert manager._gitignore_template("unknown") is None
+
+
+def test_pull_request_templates_use_repository_root(manager):
+    written = []
+    manager._put_file_sync = lambda *args: written.append(args)
+
+    manager._put_pr_templates_sync("orders")
+
+    assert len(written) == 5
+    assert {call[1] for call in written} == {
+        ".github/PULL_REQUEST_TEMPLATE/chore.md",
+        ".github/PULL_REQUEST_TEMPLATE/docs.md",
+        ".github/PULL_REQUEST_TEMPLATE/feat.md",
+        ".github/PULL_REQUEST_TEMPLATE/fix.md",
+        ".github/PULL_REQUEST_TEMPLATE/hotfix.md",
+    }
 
 
 @pytest.mark.parametrize("language", ["generic", "springboot", "android", "postgres"])
@@ -127,6 +145,7 @@ def test_bare_creation_flow(manager, language):
         manager._configure_postgres_secrets_sync = lambda *_: None
         manager._put_file_sync = lambda *_: None
         manager._put_workflow_sync = lambda *_: None
+        manager._put_pr_templates_sync = lambda *_: None
         manager._ensure_rerun_ci_label_sync = lambda _: None
         manager._protect_main_branch_sync = lambda *_: None
         manager._create_sonarcloud_project_sync = lambda _: None
@@ -160,6 +179,7 @@ def test_template_creation_flow(manager, template_name):
         manager._put_postgres_scaffold_sync = lambda _: None
         manager._configure_postgres_secrets_sync = lambda *_: None
         manager._put_workflow_sync = lambda *_: None
+        manager._put_pr_templates_sync = lambda *_: None
         manager._ensure_rerun_ci_label_sync = lambda _: None
         manager._protect_main_branch_sync = lambda *_: None
         manager._create_sonarcloud_project_sync = lambda _: None
@@ -287,7 +307,7 @@ def test_repository_readiness_and_template_validation(manager):
     assert "sql" in repo.branch.protection["contexts"]
 
     manager._protect_main_branch_sync("orders", "mongodb")
-    assert repo.branch.protection["contexts"] == ["ci", "conventional-commits", "sql"]
+    assert repo.branch.protection["contexts"] == ["ci", "sql"]
 
 
 def test_android_template_helpers(manager):
