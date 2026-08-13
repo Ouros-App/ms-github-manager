@@ -14,6 +14,13 @@ permissions:
   pull-requests: read
 
 jobs:
+  workflow-sync:
+    name: workflow-sync
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Workflow synchronized on a non-main branch."
+
   conventional-commits-warning:
     name: conventional-commits-warning
     runs-on: ubuntu-latest
