@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, RedirectResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.core.auth import create_session, is_authenticated, login_allowed
 from app.core.config import settings
@@ -83,6 +84,14 @@ async def health_check() -> HealthResponse:
         organization=settings.GITHUB_ORG_LOGIN,
         default_branch=settings.DEFAULT_BRANCH,
     )
+
+
+@router.get("/metrics", include_in_schema=False)
+async def metrics(request: Request) -> Response:
+    token = request.app.state.settings.METRICS_TOKEN
+    if token and request.headers.get("Authorization") != f"Bearer {token}":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Metricas nao autorizadas.")
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get(
