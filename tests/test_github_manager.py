@@ -110,6 +110,7 @@ def test_workflow_and_gitignore_helpers(manager):
     assert "actions/github-script@v7" in workflow
     assert 'conclusion: valid ? "success" : "neutral"' in workflow
     assert "workflow-sync" in workflow
+    assert 'branches: ["**"]' in workflow
     assert "types: [opened, synchronize, reopened, labeled]" in workflow
     assert "github.event.label.name == 'rerun-ci'" in workflow
     assert manager._workflow("unknown") == manager._workflow("generic")

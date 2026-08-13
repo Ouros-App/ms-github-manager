@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened, labeled]
     branches: [main]
   push:
-    branches: [main]
+    branches: ["**"]
 
 permissions:
   contents: read
@@ -57,7 +57,7 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' || github.event.label.name == 'rerun-ci'
+    if: (github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'rerun-ci') && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
