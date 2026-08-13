@@ -36,6 +36,7 @@ class Settings:
     SESSION_SECRET = os.getenv("SESSION_SECRET")
     SESSION_TTL_SECONDS = _positive_int("SESSION_TTL_SECONDS", os.getenv("SESSION_TTL_SECONDS", "28800"))
     AUTH_COOKIE_SECURE = _strict_bool("AUTH_COOKIE_SECURE", os.getenv("AUTH_COOKIE_SECURE", "true"))
+    METRICS_TOKEN = os.getenv("METRICS_TOKEN")
 
 
 settings = Settings()

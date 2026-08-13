@@ -23,6 +23,28 @@ def test_health_endpoint(monkeypatch):
     assert response.json()["status"] == "ok"
 
 
+def test_metrics_endpoint(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "test")
+    from app.main import app
+
+    app.state.settings.METRICS_TOKEN = "metrics-secret"
+    response = TestClient(app).get("/metrics", headers={"Authorization": "Bearer metrics-secret"})
+
+    assert response.status_code == 200
+    assert "http_requests_total" in response.text
+
+
+def test_metrics_endpoint_token(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "test")
+    from app.main import app
+
+    monkeypatch.setattr(app.state.settings, "METRICS_TOKEN", "metrics-secret")
+    client = TestClient(app)
+
+    assert client.get("/metrics").status_code == 401
+    assert client.get("/metrics", headers={"Authorization": "Bearer metrics-secret"}).status_code == 200
+
+
 def test_root_endpoint(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "test")
     from app.main import app

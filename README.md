@@ -49,6 +49,7 @@ Acesse:
 - UI: `http://localhost:8000`
 - API: `http://localhost:8000`
 - Health check: `http://localhost:8000/health`
+- Metricas Prometheus: `http://localhost:8000/metrics`
 - Docs: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
@@ -140,3 +141,15 @@ Para parar:
 ```bash
 docker compose down
 ```
+
+## Grafana Cloud
+
+O endpoint `/metrics` exige autenticacao Bearer e e compativel com o Grafana Cloud Metrics Endpoint. Defina um token forte em `METRICS_TOKEN` no ambiente do servico. No Grafana Cloud:
+
+1. Acesse `Home > Connections > Add connection`.
+2. Procure por `Metrics Endpoint`.
+3. Informe a URL publica HTTPS do servico, por exemplo `https://<dominio-do-servico>/metrics`.
+4. Se `METRICS_TOKEN` estiver preenchido, escolha autenticacao Bearer e informe o mesmo token.
+5. Use `Test connection` e depois `Save Scrape Job`.
+
+O Grafana Cloud fara o scrape automaticamente. Metricas principais: `http_requests_total`, `http_request_duration_seconds` e as metricas padrao de processo Python. A integracao de endpoint do Grafana Cloud executa scrapes a cada 60 segundos.
