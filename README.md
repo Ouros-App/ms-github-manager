@@ -21,7 +21,7 @@ As criações são iniciadas de forma assíncrona. O status pode ser `queued`, `
 - Integração com a API do GitHub por `PyGithub`.
 - Scaffolds PostgreSQL e MongoDB, incluindo configuração de secrets quando aplicável.
 - SonarCloud em job separado e CodeQL no workflow gerado.
-- Proteção da branch `main` com pull request, aprovação, checks configurados, histórico linear e conversas resolvidas.
+- Proteção da branch definida por `DEFAULT_BRANCH` (`main` por padrão), com pull request, aprovação, checks configurados, histórico linear e conversas resolvidas.
 - Interface web em `app/static`.
 - Métricas `http_requests_total`, `http_request_duration_seconds` e métricas padrão de processo Python.
 
@@ -53,7 +53,7 @@ Variáveis usadas pelo serviço:
 | `GH_TOKEN` ou `GITHUB_TOKEN` | sem padrão | Token usado pelo GitHub. |
 | `SONAR_CLOUD_TOKEN` | sem padrão | Token usado na integração com SonarCloud. |
 | `TEMPLATE_SUFFIX` | `-template` | Sufixo para descobrir templates. |
-| `DEFAULT_BRANCH` | `main` | Branch protegida. |
+| `DEFAULT_BRANCH` | `main` | Branch protegida; este é apenas o valor padrão. |
 | `GH_TIMEOUT_SECONDS` | `120` no código | Timeout do cliente GitHub. |
 | `APP_NAME` | `ms-github-manager` no exemplo | Nome usado pelos scripts/container. |
 | `VERSION` | `0.1.0` no código | Versão exposta pela API. |
@@ -73,7 +73,8 @@ Para execução local em HTTP, `AUTH_COOKIE_SECURE=false` pode ser necessário p
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+python -m pip install pytest
 uvicorn app.main:app --reload
 ```
 
@@ -148,6 +149,35 @@ Exemplo:
 
 Templates PostgreSQL e MongoDB exigem nomes terminados em `-database` e os respectivos objetos de conexão no payload. O repositório informado em `template_name` precisa estar marcado como template no GitHub.
 
+Para templates PostgreSQL, o campo `postgres` exige `host`, `database`, `user`, `password`, `root_user` e `root_password`; `port` (padrão `5432`) e `root_database` (padrão `postgres`) são configuráveis:
+
+```json
+{
+  "postgres": {
+    "host": "db.example.com",
+    "port": 5432,
+    "database": "app_db",
+    "user": "app_user",
+    "password": "senha-do-banco",
+    "root_database": "postgres",
+    "root_user": "admin",
+    "root_password": "senha-do-root"
+  }
+}
+```
+
+Para templates MongoDB, o campo `mongodb` exige uma `connection_url` válida:
+
+```json
+{
+  "mongodb": {
+    "connection_url": "mongodb+srv://usuario:senha@cluster.example.com/app_db"
+  }
+}
+```
+
+Os modelos completos também estão disponíveis em [/openapi.json](/openapi.json).
+
 ### Status da criação
 
 ```http
@@ -172,7 +202,7 @@ cp .env.example .env
 docker compose -f docker-compose.2.yml up --build
 ```
 
-O arquivo `.env` é exigido pelo Compose e pelo `Dockerfile`.
+O `docker-compose.2.yml` injeta as variáveis de `.env` em tempo de execução por meio de `env_file`. O `Dockerfile` não copia `.env` para a imagem, e o build não precisa de um arquivo `.env` com segredos. Nunca coloque tokens ou senhas nas camadas da imagem; use `.env.example` como referência e mantenha os valores reais apenas no ambiente de execução.
 
 Para o script de containers Docker:
 
