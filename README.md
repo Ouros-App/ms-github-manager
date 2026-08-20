@@ -1,21 +1,40 @@
 # Ouros GitHub Repository Manager
 
-API FastAPI para listar templates e criar repositorios na organizacao "Ouros App" usando `PyGithub`.
+API FastAPI para listar templates e criar repositórios na organização `Ouros-App` usando `PyGithub`.
 
-O servico usa `GH_TOKEN` ou `GITHUB_TOKEN` definido no `.env` para autenticar na API do GitHub.
+## Status e escopo
 
-## Funcionalidades
+O serviço atual:
 
-- Lista repositorios de template da organizacao cujo nome termina em `-template`.
-- Cria repositorio no modo cru com README, licenca MIT e `.gitignore` por linguagem quando disponivel.
-- Cria repositorio a partir de um template existente na mesma organizacao.
-- Aplica workflow de CI/CD com build, testes e SonarCloud para React + TypeScript + Vite, Java Spring REST com Gradle, Python FastAPI e Android Kotlin com Gradle.
-- Gera um scaffold PostgreSQL para DB as code com `sql/`, `config.yaml`, `.env.example`, `requirements.txt` e `scripts/apply_sql.py`.
-- Aplica protecao na branch `main`, exigindo pull request, uma aprovacao, status checks `ci`, `conventional-commits`, `sonarcloud` e `codeql`, historico linear e conversas resolvidas.
-- Expoe Swagger UI em `/docs`, ReDoc em `/redoc` e OpenAPI JSON em `/openapi.json`.
-- Expoe status de criacao por `creation_id`.
+- lista repositórios de template da organização;
+- cria repositórios no modo cru ou a partir de um template;
+- aplica workflows de CI/CD, templates de pull request, label de reexecução da CI e proteção da branch principal;
+- gera estruturas específicas para frontend, Spring Boot, FastAPI, Android, PostgreSQL e templates genéricos;
+- mantém o status de cada criação em memória e o consulta por `creation_id`;
+- serve uma UI estática, documentação OpenAPI e métricas Prometheus.
 
-## Configuracao
+As criações são iniciadas de forma assíncrona. O status pode ser `queued`, `running`, `done` ou `failed`.
+
+## Principais recursos
+
+- Templates de workflow em `app/templates/workflows`.
+- Integração com a API do GitHub por `PyGithub`.
+- Scaffolds PostgreSQL e MongoDB, incluindo configuração de secrets quando aplicável.
+- SonarCloud em job separado e CodeQL no workflow gerado.
+- Proteção da branch `main` com pull request, aprovação, checks configurados, histórico linear e conversas resolvidas.
+- Interface web em `app/static`.
+- Métricas `http_requests_total`, `http_request_duration_seconds` e métricas padrão de processo Python.
+
+## Pré-requisitos
+
+- Python e `pip`.
+- Um token do GitHub com permissões suficientes para a organização e os repositórios gerenciados.
+- Bash para os scripts `run.sh` e `run_compose.sh`.
+- Docker apenas para os fluxos de container.
+
+As dependências Python estão fixadas em `requirements.txt`, incluindo FastAPI, Uvicorn, `python-dotenv`, `PyGithub`, `httpx` e `prometheus-client`.
+
+## Configuração
 
 Crie o arquivo `.env` a partir do exemplo:
 
@@ -23,19 +42,33 @@ Crie o arquivo `.env` a partir do exemplo:
 cp .env.example .env
 ```
 
-Variaveis principais:
+Variáveis usadas pelo serviço:
 
-| Nome | Padrao | Descricao |
+| Variável | Padrão no código | Uso |
 | --- | --- | --- |
-| `APP_PORT` | `8000` | Porta publicada no host pelo Docker Compose. |
-| `GITHUB_ORG_LOGIN` | `Ouros-App` | Login/slug da organizacao no GitHub. |
-| `GH_TOKEN` | - | Token do GitHub usado pelo `PyGithub`. Nao commitar este valor. |
-| `SONAR_CLOUD_TOKEN` | - | Token usado para criar o secret `SONAR_TOKEN` nos repositorios gerados. |
-| `TEMPLATE_SUFFIX` | `-template` | Sufixo usado para descobrir repositorios de template. |
-| `DEFAULT_BRANCH` | `main` | Branch principal protegida pelo servico. |
-| `GH_TIMEOUT_SECONDS` | `120` | Timeout para as chamadas do cliente GitHub. |
+| `APP_PORT` | `8000` no exemplo | Porta usada pela configuração de execução. |
+| `PROJECT_NAME` | `Ouros GitHub Repository Manager` | Nome da API. |
+| `PROJECT_DESCRIPTION` | descrição da API | Descrição da API. |
+| `GITHUB_ORG_LOGIN` | `Ouros-App` | Organização gerenciada. |
+| `GH_TOKEN` ou `GITHUB_TOKEN` | sem padrão | Token usado pelo GitHub. |
+| `SONAR_CLOUD_TOKEN` | sem padrão | Token usado na integração com SonarCloud. |
+| `TEMPLATE_SUFFIX` | `-template` | Sufixo para descobrir templates. |
+| `DEFAULT_BRANCH` | `main` | Branch protegida. |
+| `GH_TIMEOUT_SECONDS` | `120` no código | Timeout do cliente GitHub. |
+| `APP_NAME` | `ms-github-manager` no exemplo | Nome usado pelos scripts/container. |
+| `VERSION` | `0.1.0` no código | Versão exposta pela API. |
+| `AUTH_USERNAME` | `admin` | Usuário do login da UI/API. |
+| `AUTH_PASSWORD` | sem padrão | Senha do login. |
+| `SESSION_SECRET` | sem padrão | Segredo para assinar a sessão. |
+| `SESSION_TTL_SECONDS` | `28800` | Duração da sessão. |
+| `AUTH_COOKIE_SECURE` | `true` | Define o atributo Secure do cookie. |
+| `METRICS_TOKEN` | sem padrão | Token Bearer para `/metrics`. |
 
-## Rodando localmente
+Não versione valores reais de `GH_TOKEN`, `GITHUB_TOKEN`, `SONAR_CLOUD_TOKEN`, `AUTH_PASSWORD` ou `SESSION_SECRET`.
+
+Para execução local em HTTP, `AUTH_COOKIE_SECURE=false` pode ser necessário para que o navegador envie o cookie de sessão. Em produção, mantenha cookies seguros conforme o ambiente HTTPS.
+
+## Execução local
 
 ```bash
 python -m venv .venv
@@ -44,30 +77,46 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Acesse:
+A API escuta em `http://localhost:8000` por padrão. As rotas de criação exigem uma sessão autenticada. Faça login em `POST /auth/login` com:
 
-- UI: `http://localhost:8000`
-- API: `http://localhost:8000`
-- Health check: `http://localhost:8000/health`
-- Metricas Prometheus: `http://localhost:8000/metrics`
-- Docs: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+```json
+{
+  "username": "admin",
+  "password": "sua-senha"
+}
+```
+
+A sessão é mantida em um cookie HTTP-only chamado `session`.
 
 ## Endpoints
 
-### Listar templates
+### Autenticação e acesso
+
+- `POST /auth/login`: cria a sessão.
+- `GET /auth/session`: valida a sessão atual.
+- `POST /auth/logout`: remove a sessão.
+- `GET /health`: health check com serviço, versão, organização e branch padrão.
+- `GET /ui`: interface web estática.
+- `GET /app`: redireciona para `/ui`.
+- `GET /static/*`: arquivos estáticos.
+
+As demais rotas, incluindo `/docs`, `/redoc`, `/openapi.json`, `/`, `/templates` e as rotas de criação, passam pela autenticação de sessão. `/metrics` exige `Authorization: Bearer <METRICS_TOKEN>`; com o middleware atual, deixe `METRICS_TOKEN` preenchido para acessar a rota.
+
+### Templates
 
 ```http
 GET /templates
 ```
 
-Retorna os repositorios da organizacao cujo nome termina com `-template`.
+Lista os repositórios cujo nome termina com o valor de `TEMPLATE_SUFFIX`.
 
-### Criar repositorio cru
+### Criação de repositório cru
 
 ```http
 POST /repositories/bare
 ```
+
+Exemplo de payload:
 
 ```json
 {
@@ -78,18 +127,15 @@ POST /repositories/bare
 }
 ```
 
-O servico força visibilidade `public` nos repositorios gerados.
+Valores aceitos para `language`: `generic`, `frontend`, `springboot`, `fastapi`, `android` e `postgres`. Repositórios PostgreSQL devem terminar com `-database`.
 
-Valores aceitos para `language`: `frontend`, `springboot`, `fastapi`, `android`, `postgres`.
-
-O servico adiciona o workflow `.github/workflows/ci-cd.yml` conforme a linguagem escolhida. O template Spring gera um esqueleto REST com `build.gradle`, `settings.gradle`, controllers, teste basico, plugins de `jacoco` e `sonarqube`, e sobrescreve `application.properties` e `application-local.properties` com base no nome do repositorio, descartando o prefixo `ms-` e o sufixo `-template` quando existirem. O template Android gera estrutura Kotlin/Gradle no padrao do Android Studio com `settings.gradle.kts`, `build.gradle.kts`, modulo `app`, `AndroidManifest.xml`, `MainActivity.kt`, recursos e teste unitario. O template PostgreSQL gera um scaffold DB as code com `sql/versionamento.sql`, `scripts/apply_sql.py`, `config.yaml`, `.env.example` e `requirements.txt`. Quando o repo nasce de um template Android, o servico substitui `{{PROJECT_NAME}}`, `{{APP_LABEL}}`, `{{PACKAGE_NAME}}`, `{{PACKAGE_PATH}}` e `{{APPLICATION_CLASS_NAME}}`, incluindo caminhos de arquivo. Quando o repo nasce de um template Spring, a estrutura herdada em `src/main/java`, `src/main/kotlin`, `src/test/java` e `src/test/kotlin` tambem e limpa antes de gerar as classes novas. Exemplo: `ms-orders-api-template` vira `spring.application.name=orders-api`, `com.ourosapp.ordersapi` e `OrdersApiApplication`. O SonarCloud roda em um job separado chamado `sonarcloud` e usa `SONAR_TOKEN` como secret do repositorio. O GitHub CodeQL roda em paralelo no job `codeql`. O deploy nao faz parte desse workflow: releases podem disparar outra pipeline separada.
-Os templates usados ficam em `app/templates/workflows`.
-
-### Criar repositorio a partir de template
+### Criação a partir de template
 
 ```http
 POST /repositories/from-template
 ```
+
+Exemplo:
 
 ```json
 {
@@ -100,56 +146,87 @@ POST /repositories/from-template
 }
 ```
 
-O workflow de CI/CD e escolhido pelo nome do template quando ele contem `frontend`, `react`, `vite`, `typescript`, `spring`, `java`, `android`, `kotlin`, `mobile`, `postgres`, `postgresql`, `migration` ou `fastapi`. Outros templates recebem um workflow generico.
+Templates PostgreSQL e MongoDB exigem nomes terminados em `-database` e os respectivos objetos de conexão no payload. O repositório informado em `template_name` precisa estar marcado como template no GitHub.
 
-No template PostgreSQL, `execution_order` aceita `{ file, mode }`: `always` executa a cada deploy, `on_change` executa apenas quando o SHA-256 do SQL muda, `once` executa somente na primeira vez e `never` apenas valida a existencia. Strings antigas continuam como `on_change`. O estado fica em `controle_scripts_sql`, dentro da mesma transacao e sob advisory lock.
-
-O repositorio escolhido em `template_name` precisa estar marcado como template no GitHub. Se o nome existir mas o repo nao estiver habilitado como template, a API do GitHub pode responder com `404 Not Found`.
-
-### Consultar status de criacao
+### Status da criação
 
 ```http
 GET /repositories/creations/{creation_id}
 ```
 
-Exemplo de resposta:
+O retorno informa `status`, repositório, modo (`bare` ou `template`), etapas, erro e URL quando disponíveis. O estado fica somente na memória do processo e não é compartilhado entre réplicas.
 
-```json
-{
-  "creation_id": "8ff5a88d-d2c4-4c27-9c2d-13e0a19599e1",
-  "status": "running",
-  "repository": "Ouros-App/orders-api",
-  "mode": "bare",
-  "started_at": "2026-06-07T23:00:00Z",
-  "finished_at": null,
-  "steps": ["Criando repositorio cru"],
-  "error": null,
-  "url": null
-}
-```
+### Documentação e métricas
 
-O status fica em memoria do processo. Para execucao com multiplas replicas ou historico persistente, substitua o armazenamento interno por banco ou fila.
+- `/docs`: Swagger UI.
+- `/redoc`: ReDoc.
+- `/openapi.json`: schema OpenAPI.
+- `/metrics`: formato Prometheus, protegido por Bearer.
 
-## Rodando com Docker Compose
+## Execução com Docker
+
+O repositório contém `docker-compose.2.yml`, que publica a porta `6539` do host para a porta `8000` do container:
 
 ```bash
-docker compose up --build
+cp .env.example .env
+docker compose -f docker-compose.2.yml up --build
 ```
 
-Para parar:
+O arquivo `.env` é exigido pelo Compose e pelo `Dockerfile`.
+
+Para o script de containers Docker:
 
 ```bash
-docker compose down
+./run.sh
+./run.sh --reboot NUMERO
+./run.sh --remove NUMERO
+./run.sh --list
 ```
 
-## Grafana Cloud
+Para o script que gera Compose por instância:
 
-O endpoint `/metrics` exige autenticacao Bearer e e compativel com o Grafana Cloud Metrics Endpoint. Defina um token forte em `METRICS_TOKEN` no ambiente do servico. No Grafana Cloud:
+```bash
+./run_compose.sh
+./run_compose.sh --rebuild
+./run_compose.sh --rebuild NUMERO
+./run_compose.sh --reboot NUMERO
+./run_compose.sh --bind NUMERO
+./run_compose.sh --help
+```
 
-1. Acesse `Home > Connections > Add connection`.
-2. Procure por `Metrics Endpoint`.
-3. Informe a URL publica HTTPS do servico, por exemplo `https://<dominio-do-servico>/metrics`.
-4. Se `METRICS_TOKEN` estiver preenchido, escolha autenticacao Bearer e informe o mesmo token.
-5. Use `Test connection` e depois `Save Scrape Job`.
+## Testes e qualidade
 
-O Grafana Cloud fara o scrape automaticamente. Metricas principais: `http_requests_total`, `http_request_duration_seconds` e as metricas padrao de processo Python. A integracao de endpoint do Grafana Cloud executa scrapes a cada 60 segundos.
+Os testes estão em `tests/` e usam `pytest` para validar a API, schemas, fluxos de criação, integração com o gerenciador GitHub e helpers de scaffold. O `requirements.txt` não declara `pytest`; ele precisa estar disponível no ambiente para executar a suíte:
+
+```bash
+python -m pytest
+```
+
+## Estrutura do projeto
+
+```text
+.
+├── app/
+│   ├── api/routes.py
+│   ├── core/
+│   ├── schemas/
+│   ├── services/github_manager.py
+│   ├── static/
+│   └── templates/workflows/
+├── tests/
+├── .env.example
+├── Dockerfile
+├── docker-compose.2.yml
+├── main.py
+├── requirements.txt
+├── run.sh
+└── run_compose.sh
+```
+
+## Contribuição
+
+Faça alterações em uma branch própria e use os templates de pull request disponíveis em `.github/PULL_REQUEST_TEMPLATE`. Não versione segredos nem tokens.
+
+## Licença
+
+Este projeto está sob a licença MIT. Consulte o arquivo [LICENSE](LICENSE).
