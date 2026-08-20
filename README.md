@@ -1,5 +1,17 @@
 # Ouros GitHub Repository Manager
 
+<!-- REPO-METADATA:START -->
+<div align="center">
+
+[![Repo Size](https://img.shields.io/github/repo-size/Ouros-App/ms-github-manager?style=flat-square&label=REPO%20SIZE)](https://github.com/Ouros-App/ms-github-manager)
+[![Languages](https://img.shields.io/github/languages/count/Ouros-App/ms-github-manager?style=flat-square&label=LANGUAGES)](https://github.com/Ouros-App/ms-github-manager/languages)
+[![Forks](https://img.shields.io/github/forks/Ouros-App/ms-github-manager?style=flat-square&label=FORKS)](https://github.com/Ouros-App/ms-github-manager/network/members)
+[![Issues](https://img.shields.io/github/issues/Ouros-App/ms-github-manager?style=flat-square&label=ISSUES)](https://github.com/Ouros-App/ms-github-manager/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/Ouros-App/ms-github-manager?style=flat-square&label=PULL%20REQUESTS)](https://github.com/Ouros-App/ms-github-manager/pulls)
+
+</div>
+<!-- REPO-METADATA:END -->
+
 API FastAPI para listar templates e criar repositórios na organização `Ouros-App` usando `PyGithub`.
 
 ## Status e escopo
@@ -260,3 +272,12 @@ Faça alterações em uma branch própria e use os templates de pull request dis
 ## Licença
 
 Este projeto está sob a licença MIT. Consulte o arquivo [LICENSE](LICENSE).
+
+
+## Principais contribuidores
+
+<!-- CONTRIBUTORS:START -->
+- [@Nicolas25vlad](https://github.com/Nicolas25vlad) — 72 contribuições
+<!-- CONTRIBUTORS:END -->
+
+> Atualizado automaticamente semanalmente pelo workflow de metadados do README.
