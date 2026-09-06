@@ -1,6 +1,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-dotenv==1.2.2
+infisicalsdk==1.0.14
 PyGithub==2.5.0
 httpx==0.28.1
 prometheus-client==0.21.1

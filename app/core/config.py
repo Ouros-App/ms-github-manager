@@ -2,7 +2,10 @@ import os
 
 from dotenv import load_dotenv
 
+from app.core.infisical import load_infisical_secrets
+
 load_dotenv()
+load_infisical_secrets()
 
 
 def _positive_int(name: str, value: str) -> int:
